@@ -128,7 +128,12 @@ function elektron_escrow_ensure_schema()
 
     // Check for one of the new columns; if missing, add both.
     $cols = $dao->dao->query("SHOW COLUMNS FROM {$table} LIKE 'buyer_refund_psbt_base64'");
-    if ($cols && $cols->num_rows === 0) {
+    $exists = false;
+    if ($cols) {
+        $row = $cols->row();
+        $exists = !empty($row);
+    }
+    if (!$exists) {
         $dao->dao->query(
             "ALTER TABLE {$table}
              ADD COLUMN buyer_refund_psbt_base64 MEDIUMTEXT NULL AFTER psbt_signature_count,
