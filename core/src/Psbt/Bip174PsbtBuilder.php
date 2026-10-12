@@ -151,4 +151,140 @@ final class Bip174PsbtBuilder implements ReleasePsbtBuilderInterface
             'value' => $value,
         ];
     }
+
+
+    /**
+     * Builds a buyer-refund PSBT that spends the escrow to the buyer's payout
+     * address, locked with nLockTime = buyerRefundLocktime (T1).
+     * The seller must sign this before the buyer pays, so the buyer has a
+     * unilateral exit after T1.
+     *
+     * @param FundingOutput[] $fundingOutputs
+     */
+    public function buildBuyerRefundPsbt(
+        EscrowAddress $escrowAddress,
+        array $fundingOutputs,
+        PsbtKeyOrigin $buyerKey,
+        PsbtKeyOrigin $sellerKey,
+        string $buyerPayoutAddress,
+        PsbtKeyOrigin $buyerPayoutKey,
+        int $feeRateLepPerVByte,
+        Network $network
+    ): string {
+        return $this->buildTimeoutPsbt(
+            $escrowAddress,
+            $fundingOutputs,
+            $buyerKey,
+            $sellerKey,
+            $buyerPayoutAddress,
+            $buyerPayoutKey,
+            $feeRateLepPerVByte,
+            $network,
+            $escrowAddress->buyerRefundLocktime()
+        );
+    }
+
+    /**
+     * Builds a seller-claim PSBT that spends the escrow to the seller's payout
+     * address, locked with nLockTime = sellerReleaseLocktime (T2).
+     * The buyer must sign this before paying, so the seller has a unilateral
+     * exit after T2.
+     *
+     * @param FundingOutput[] $fundingOutputs
+     */
+    public function buildSellerClaimPsbt(
+        EscrowAddress $escrowAddress,
+        array $fundingOutputs,
+        PsbtKeyOrigin $buyerKey,
+        PsbtKeyOrigin $sellerKey,
+        string $sellerPayoutAddress,
+        PsbtKeyOrigin $sellerPayoutKey,
+        int $feeRateLepPerVByte,
+        Network $network
+    ): string {
+        return $this->buildTimeoutPsbt(
+            $escrowAddress,
+            $fundingOutputs,
+            $buyerKey,
+            $sellerKey,
+            $sellerPayoutAddress,
+            $sellerPayoutKey,
+            $feeRateLepPerVByte,
+            $network,
+            $escrowAddress->sellerReleaseLocktime()
+        );
+    }
+
+    /**
+     * Shared builder for time-locked unilateral exit PSBTs.
+     *
+     * @param FundingOutput[] $fundingOutputs
+     */
+    private function buildTimeoutPsbt(
+        EscrowAddress $escrowAddress,
+        array $fundingOutputs,
+        PsbtKeyOrigin $buyerKey,
+        PsbtKeyOrigin $sellerKey,
+        string $payoutAddressStr,
+        PsbtKeyOrigin $payoutKey,
+        int $feeRateLepPerVByte,
+        Network $network,
+        int $lockTime
+    ): string {
+        if (count($fundingOutputs) < 1) {
+            throw new RuntimeException('Timeout PSBT: at least one funding output is required.');
+        }
+
+        $totalFundingLep = 0;
+        foreach ($fundingOutputs as $fundingOutput) {
+            $totalFundingLep += $fundingOutput->amountLep();
+        }
+
+        $fee = $feeRateLepPerVByte * self::estimateVsize(count($fundingOutputs));
+        $outputAmountLep = $totalFundingLep - $fee;
+        if ($outputAmountLep <= 0) {
+            throw new RuntimeException(
+                "Timeout PSBT: total funding ({$totalFundingLep} lep) does not cover the estimated fee ({$fee} lep)."
+            );
+        }
+
+        $witnessScript = ScriptFactory::fromHex($escrowAddress->redeemScriptHex());
+        $escrowScriptPubKey = (new WitnessScript($witnessScript))->getOutputScript();
+
+        $payoutAddress = (new AddressCreator())->fromString($payoutAddressStr, $network);
+
+        $txBuilder = new TxBuilder();
+        foreach ($fundingOutputs as $fundingOutput) {
+            // nSequence must be < 0xffffffff for nLockTime to be enforced
+            $txBuilder->input($fundingOutput->txid(), $fundingOutput->vout(), null, 0xfffffffe);
+        }
+        $unsignedTx = $txBuilder
+            ->payToAddress($outputAmountLep, $payoutAddress)
+            ->locktime($lockTime)
+            ->get();
+
+        $globalPairs = [
+            ['key' => Bip174Writer::key(0x00), 'value' => $unsignedTx->getBinary()],
+        ];
+
+        $inputMaps = [];
+        foreach ($fundingOutputs as $fundingOutput) {
+            $witnessUtxo = new TransactionOutput($fundingOutput->amountLep(), $escrowScriptPubKey);
+            $inputMaps[] = [
+                ['key' => Bip174Writer::key(0x01), 'value' => $witnessUtxo->getBinary()],
+                ['key' => Bip174Writer::key(0x05), 'value' => $witnessScript->getBinary()],
+                $this->bip32DerivationPair($buyerKey, $network),
+                $this->bip32DerivationPair($sellerKey, $network),
+            ];
+        }
+
+        $outputPairs = [
+            $this->bip32DerivationPair($payoutKey, $network, 0x02),
+        ];
+
+        $psbtBytes = Bip174Writer::encode($globalPairs, $inputMaps, [$outputPairs]);
+
+        return base64_encode($psbtBytes);
+    }
+
 }

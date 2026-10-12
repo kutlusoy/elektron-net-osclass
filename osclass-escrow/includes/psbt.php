@@ -79,3 +79,78 @@ function elektron_escrow_build_release_psbt(array $order): PsbtRelay
 
     return new PsbtRelay($psbtBase64, 0);
 }
+
+
+/**
+ * Builds both unilateral timeout PSBTs (buyer refund @ T1, seller claim @ T2)
+ * once funding UTXOs are known. Stores the unsigned versions on the order row
+ * so the parties can exchange signatures via the order-status page.
+ *
+ * Call this after the order reaches "funded" and funding outputs are confirmed.
+ */
+function elektron_escrow_prepare_timeout_psbts(array $order): array
+{
+    $network = elektron_escrow_network();
+    $config = elektron_escrow_config();
+
+    $buyerXpub = elektron_escrow_get_user_xpub((int) $order['fk_i_buyer_id']);
+    $sellerXpub = elektron_escrow_get_user_xpub((int) $order['fk_i_seller_id']);
+    if ($buyerXpub === null || $sellerXpub === null) {
+        throw new RuntimeException("Timeout PSBTs: missing xpub for order {$order['pk_i_id']}.");
+    }
+
+    $chainData = elektron_escrow_chain_data();
+    $fundingOutputs = $chainData->getFundingOutputs($order['s_address']);
+    if (count($fundingOutputs) < 1) {
+        throw new RuntimeException("Timeout PSBTs: no funding outputs for order {$order['pk_i_id']}.");
+    }
+
+    $feeRate = FeeRateResolver::resolve($chainData, $config->feeRateLepPerVByte());
+
+    $escrowAddress = new EscrowAddress(
+        $order['s_address'],
+        $order['redeem_script_hex'],
+        (int) $order['buyer_refund_locktime'],
+        (int) $order['seller_release_locktime']
+    );
+
+    $builder = new Bip174PsbtBuilder();
+
+    // Buyer refund: pays to a fresh child address derived from the buyer's xpub
+    // (same pattern as the seller payout). Both parties must have connected a wallet.
+    $deriver = new XpubChildKeyDeriver();
+    $buyerPayoutIndex = (int) $order['buyer_pubkey_index'] + 1;
+    $buyerPayoutPub = $deriver->deriveChildPubKeyHex($buyerXpub, $buyerPayoutIndex, $network);
+    $buyerPayoutAddr = $deriver->deriveChildAddress($buyerXpub, $buyerPayoutIndex, $network);
+
+    $refundPsbt = $builder->buildBuyerRefundPsbt(
+        $escrowAddress,
+        $fundingOutputs,
+        new PsbtKeyOrigin($order['buyer_pubkey'], $buyerXpub, (int) $order['buyer_pubkey_index']),
+        new PsbtKeyOrigin($order['seller_pubkey'], $sellerXpub, (int) $order['seller_pubkey_index']),
+        $buyerPayoutAddr,
+        new PsbtKeyOrigin($buyerPayoutPub, $buyerXpub, $buyerPayoutIndex),
+        $feeRate,
+        $network
+    );
+
+    $claimPsbt = $builder->buildSellerClaimPsbt(
+        $escrowAddress,
+        $fundingOutputs,
+        new PsbtKeyOrigin($order['buyer_pubkey'], $buyerXpub, (int) $order['buyer_pubkey_index']),
+        new PsbtKeyOrigin($order['seller_pubkey'], $sellerXpub, (int) $order['seller_pubkey_index']),
+        $order['seller_payout_address'],
+        new PsbtKeyOrigin(
+            (new XpubChildKeyDeriver())->deriveChildPubKeyHex($sellerXpub, (int) $order['seller_payout_index'], $network),
+            $sellerXpub,
+            (int) $order['seller_payout_index']
+        ),
+        $feeRate,
+        $network
+    );
+
+    return [
+        'buyer_refund_psbt_base64' => $refundPsbt,
+        'seller_claim_psbt_base64' => $claimPsbt,
+    ];
+}

@@ -232,6 +232,59 @@ if ($isBuyer && Params::getParam('submit_signed_psbt') === '1') {
     }
 }
 
+
+// Buyer submits signed refund PSBT (T1 unilateral exit)
+if ($isBuyer && Params::getParam('submit_signed_refund') === '1') {
+    osc_csrf_check();
+    $submitted = trim((string) Params::getParam('signed_refund_psbt'));
+    if (empty($order['buyer_refund_psbt_base64'])) {
+        $errorMessage = __('No refund PSBT is available yet.', ELEKTRON_ESCROW_DOMAIN);
+    } elseif ($submitted === '') {
+        $errorMessage = __('Please paste your signed refund PSBT.', ELEKTRON_ESCROW_DOMAIN);
+    } else {
+        try {
+            $sigCount = PsbtSignatureInspector::countSignatures($submitted, $order['buyer_refund_psbt_base64']);
+            if ($sigCount < 1) {
+                throw new RuntimeException('no signature');
+            }
+            $orderDao->updateByPrimaryKey(
+                ['buyer_refund_psbt_base64' => $submitted, 'dt_mod_date' => date('Y-m-d H:i:s')],
+                $orderId
+            );
+            $order['buyer_refund_psbt_base64'] = $submitted;
+            $statusMessage = __('Your refund signature was saved. You can broadcast this transaction after T1 if needed.', ELEKTRON_ESCROW_DOMAIN);
+        } catch (Throwable $e) {
+            $errorMessage = __('This does not look like a signed version of the refund PSBT. Please sign the exact one shown below.', ELEKTRON_ESCROW_DOMAIN);
+        }
+    }
+}
+
+// Seller submits signed claim PSBT (T2 unilateral exit)
+if (!$isBuyer && Params::getParam('submit_signed_claim') === '1') {
+    osc_csrf_check();
+    $submitted = trim((string) Params::getParam('signed_claim_psbt'));
+    if (empty($order['seller_claim_psbt_base64'])) {
+        $errorMessage = __('No claim PSBT is available yet.', ELEKTRON_ESCROW_DOMAIN);
+    } elseif ($submitted === '') {
+        $errorMessage = __('Please paste your signed claim PSBT.', ELEKTRON_ESCROW_DOMAIN);
+    } else {
+        try {
+            $sigCount = PsbtSignatureInspector::countSignatures($submitted, $order['seller_claim_psbt_base64']);
+            if ($sigCount < 1) {
+                throw new RuntimeException('no signature');
+            }
+            $orderDao->updateByPrimaryKey(
+                ['seller_claim_psbt_base64' => $submitted, 'dt_mod_date' => date('Y-m-d H:i:s')],
+                $orderId
+            );
+            $order['seller_claim_psbt_base64'] = $submitted;
+            $statusMessage = __('Your claim signature was saved. You can broadcast this transaction after T2 if needed.', ELEKTRON_ESCROW_DOMAIN);
+        } catch (Throwable $e) {
+            $errorMessage = __('This does not look like a signed version of the claim PSBT. Please sign the exact one shown below.', ELEKTRON_ESCROW_DOMAIN);
+        }
+    }
+}
+
 // Seller-only: records that the cooperative release has actually happened
 // (both parties signed and broadcast a spend from the escrow address to the
 // seller's own wallet, outside this plugin -- see ReleasePsbtBuilderInterface's

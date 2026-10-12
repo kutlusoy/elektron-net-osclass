@@ -72,6 +72,24 @@ function elektron_escrow_check_payment(array $order): array
         if ($item !== false) {
             elektron_escrow_send_order_funded_emails($order, $item, ((int) $order['amount_lep']) / 100000000);
         }
+
+        // Prepare unilateral timeout PSBTs now that funding UTXOs are known.
+        // Parties exchange signatures on the order-status page before relying on them.
+        try {
+            $timeouts = elektron_escrow_prepare_timeout_psbts($order);
+            EscrowOrderDAO::newInstance()->updateByPrimaryKey(
+                [
+                    'buyer_refund_psbt_base64' => $timeouts['buyer_refund_psbt_base64'],
+                    'seller_claim_psbt_base64' => $timeouts['seller_claim_psbt_base64'],
+                    'dt_mod_date' => $modDate,
+                ],
+                (int) $order['pk_i_id']
+            );
+            $order = array_merge($order, $timeouts);
+        } catch (Throwable $e) {
+            // Non-fatal: the cooperative release path still works. Log and continue.
+            error_log("elektron-escrow: could not prepare timeout PSBTs for order {$order['pk_i_id']}: " . $e->getMessage());
+        }
     }
 
     return $order;
