@@ -43,6 +43,8 @@ function elektron_escrow_install()
             status VARCHAR(40) NOT NULL DEFAULT \'awaiting_payment\',
             psbt_base64 MEDIUMTEXT NULL,
             psbt_signature_count TINYINT(1) NOT NULL DEFAULT 0,
+            buyer_refund_psbt_base64 MEDIUMTEXT NULL,
+            seller_claim_psbt_base64 MEDIUMTEXT NULL,
             dt_pub_date DATETIME NOT NULL,
             dt_mod_date DATETIME NULL,
 
@@ -111,6 +113,27 @@ function elektron_escrow_set_default_preferences()
         if (osc_get_preference($name, 'plugin-osclass-escrow') === '') {
             Preference::newInstance()->replace($name, $value, 'plugin-osclass-escrow', 'STRING');
         }
+    }
+}
+
+
+/**
+ * Ensures timeout-PSBT columns exist on existing installations.
+ * Safe to call on every request; does nothing if the columns are already present.
+ */
+function elektron_escrow_ensure_schema()
+{
+    $dao = EscrowOrderDAO::newInstance();
+    $table = DB_TABLE_PREFIX . 'elektron_escrow_order';
+
+    // Check for one of the new columns; if missing, add both.
+    $cols = $dao->dao->query("SHOW COLUMNS FROM {$table} LIKE 'buyer_refund_psbt_base64'");
+    if ($cols && $cols->num_rows === 0) {
+        $dao->dao->query(
+            "ALTER TABLE {$table}
+             ADD COLUMN buyer_refund_psbt_base64 MEDIUMTEXT NULL AFTER psbt_signature_count,
+             ADD COLUMN seller_claim_psbt_base64 MEDIUMTEXT NULL AFTER buyer_refund_psbt_base64"
+        );
     }
 }
 

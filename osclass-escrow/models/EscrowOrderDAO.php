@@ -56,6 +56,8 @@ class EscrowOrderDAO extends DAO
             'status',
             'psbt_base64',
             'psbt_signature_count',
+            'buyer_refund_psbt_base64',
+            'seller_claim_psbt_base64',
             'dt_pub_date',
             'dt_mod_date',
         ]);

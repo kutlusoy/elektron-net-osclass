@@ -51,6 +51,49 @@ elektron_escrow_table_style();
     <?php } ?>
 
     <?php
+    // Prominent "Next step" box — role- and status-aware so both parties
+    // immediately see what they need to do after the initial payment.
+    $nextStep = null;
+    $nextStepClass = 'elektron-escrow-next';
+    if ($order['status'] === OrderStatus::AWAITING_PAYMENT || $order['status'] === OrderStatus::CONFIRMING) {
+        if ($isBuyer) {
+            $nextStep = __('Pay the amount shown to the escrow address (QR code below). Once confirmed, the seller will see your shipping details.', ELEKTRON_ESCROW_DOMAIN);
+        } else {
+            $nextStep = __('Waiting for the buyer to pay. You will receive the shipping details once the payment is confirmed.', ELEKTRON_ESCROW_DOMAIN);
+        }
+    } elseif ($order['status'] === OrderStatus::FUNDED) {
+        if ($isBuyer) {
+            $nextStep = __('Payment confirmed. After you receive the goods, click "Confirm receipt" below. The seller cannot release the funds until you do.', ELEKTRON_ESCROW_DOMAIN);
+        } else {
+            $nextStep = __('Payment confirmed. Ship the goods to the address shown above. The buyer will confirm receipt once they arrive.', ELEKTRON_ESCROW_DOMAIN);
+        }
+    } elseif ($order['status'] === OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE) {
+        if ($isBuyer) {
+            if ((int)($order['psbt_signature_count'] ?? 0) < 1) {
+                $nextStep = __('Sign the release transaction in your wallet (QR / text below), then paste the signed version back here.', ELEKTRON_ESCROW_DOMAIN);
+            } else {
+                $nextStep = __('You already signed. Waiting for the seller to sign and broadcast the release.', ELEKTRON_ESCROW_DOMAIN);
+            }
+        } else {
+            if ((int)($order['psbt_signature_count'] ?? 0) < 1) {
+                $nextStep = __('Waiting for the buyer to sign the release first.', ELEKTRON_ESCROW_DOMAIN);
+            } else {
+                $nextStep = __('Scan the QR code below (or copy the text) into your wallet, add your signature and broadcast. Then mark the order as released.', ELEKTRON_ESCROW_DOMAIN);
+            }
+        }
+    } elseif (in_array($order['status'], OrderStatus::TERMINAL, true)) {
+        $nextStep = __('This order is finished.', ELEKTRON_ESCROW_DOMAIN);
+        $nextStepClass .= ' elektron-escrow-next--done';
+    }
+    ?>
+    <?php if ($nextStep !== null) { ?>
+        <div class="<?php echo $nextStepClass; ?>" style="border:1px solid #4a90d9; background:#f0f7ff; padding:1em; margin:1em 0; border-radius:6px;">
+            <strong><?php _e('Next step', ELEKTRON_ESCROW_DOMAIN); ?>:</strong>
+            <p style="margin:0.4em 0 0;"><?php echo osc_esc_html($nextStep); ?></p>
+        </div>
+    <?php } ?>
+
+    <?php
     // Only shown to the seller, and only once payment is actually
     // confirmed (i.e. no longer awaiting_payment/confirming) -- see
     // controllers/checkout.php for why this is collected per order rather
@@ -225,4 +268,48 @@ elektron_escrow_table_style();
     <?php } else { ?>
         <p><?php echo osc_esc_html(elektron_escrow_t('order.' . $order['status'])); ?></p>
     <?php } ?>
+
+    <?php
+    $hasRefund = !empty($order['buyer_refund_psbt_base64']);
+    $hasClaim = !empty($order['seller_claim_psbt_base64']);
+    if ($hasRefund || $hasClaim) {
+    ?>
+        <h2><?php _e('Timeout transactions (unilateral exit)', ELEKTRON_ESCROW_DOMAIN); ?></h2>
+        <p class="text-muted"><?php _e('These let either party exit alone after the timeout. Sign in your wallet and paste the result back here.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+
+        <?php if ($hasRefund && $isBuyer) { ?>
+            <h3><?php _e('Your refund (valid after T1)', ELEKTRON_ESCROW_DOMAIN); ?></h3>
+            <?php
+            $qr = new QrCode($order['buyer_refund_psbt_base64']);
+            $png = base64_encode((new PngWriter())->write($qr)->getString());
+            ?>
+            <img src="data:image/png;base64,<?php echo $png; ?>" alt="Buyer refund PSBT" style="max-width:240px;" />
+            <p><textarea class="elektron-escrow-code" readonly rows="3" style="width:100%;" onclick="this.select();"><?php echo osc_esc_html($order['buyer_refund_psbt_base64']); ?></textarea></p>
+            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
+                <?php echo osc_csrf_token_form(); ?>
+                <input type="hidden" name="submit_signed_refund" value="1" />
+                <p><label><?php _e('Paste signed refund PSBT', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
+                <textarea name="signed_refund_psbt" rows="3" style="width:100%;"></textarea>
+                <p><input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Save signed refund', ELEKTRON_ESCROW_DOMAIN)); ?>" /></p>
+            </form>
+        <?php } ?>
+
+        <?php if ($hasClaim && !$isBuyer) { ?>
+            <h3><?php _e('Your claim (valid after T2)', ELEKTRON_ESCROW_DOMAIN); ?></h3>
+            <?php
+            $qr = new QrCode($order['seller_claim_psbt_base64']);
+            $png = base64_encode((new PngWriter())->write($qr)->getString());
+            ?>
+            <img src="data:image/png;base64,<?php echo $png; ?>" alt="Seller claim PSBT" style="max-width:240px;" />
+            <p><textarea class="elektron-escrow-code" readonly rows="3" style="width:100%;" onclick="this.select();"><?php echo osc_esc_html($order['seller_claim_psbt_base64']); ?></textarea></p>
+            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
+                <?php echo osc_csrf_token_form(); ?>
+                <input type="hidden" name="submit_signed_claim" value="1" />
+                <p><label><?php _e('Paste signed claim PSBT', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
+                <textarea name="signed_claim_psbt" rows="3" style="width:100%;"></textarea>
+                <p><input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Save signed claim', ELEKTRON_ESCROW_DOMAIN)); ?>" /></p>
+            </form>
+        <?php } ?>
+    <?php } ?>
+
 </div>
