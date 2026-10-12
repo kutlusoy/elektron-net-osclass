@@ -63,9 +63,15 @@ elektron_escrow_table_style();
         }
     } elseif ($order['status'] === OrderStatus::FUNDED) {
         if ($isBuyer) {
-            $nextStep = __('Payment confirmed. After you receive the goods, click "Confirm receipt" below. The seller cannot release the funds until you do.', ELEKTRON_ESCROW_DOMAIN);
+            $nextStep = __('Payment confirmed. Waiting for the seller to confirm shipment.', ELEKTRON_ESCROW_DOMAIN);
         } else {
-            $nextStep = __('Payment confirmed. Ship the goods to the address shown above. The buyer will confirm receipt once they arrive.', ELEKTRON_ESCROW_DOMAIN);
+            $nextStep = __('Payment confirmed. Ship the goods, then click "I have shipped" below.', ELEKTRON_ESCROW_DOMAIN);
+        }
+    } elseif ($order['status'] === OrderStatus::SHIPPED) {
+        if ($isBuyer) {
+            $nextStep = __('Seller has shipped. When you receive the goods, click "I have received" below.', ELEKTRON_ESCROW_DOMAIN);
+        } else {
+            $nextStep = __('You confirmed shipment. Waiting for the buyer to confirm receipt.', ELEKTRON_ESCROW_DOMAIN);
         }
     } elseif ($order['status'] === OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE) {
         if ($isBuyer) {
@@ -91,7 +97,18 @@ elektron_escrow_table_style();
             <strong><?php _e('Next step', ELEKTRON_ESCROW_DOMAIN); ?>:</strong>
             <p style="margin:0.4em 0 0;"><?php echo osc_esc_html($nextStep); ?></p>
         </div>
+    
+    <?php if (!$isBuyer && $order['status'] === OrderStatus::FUNDED) { ?>
+        <form method="post" style="margin:1em 0;">
+            <?php echo osc_csrf_token_form(); ?>
+            <input type="hidden" name="mark_shipped" value="1" />
+            <button type="submit" class="btn btn-primary" style="font-size:1.2em; padding:0.6em 1.4em;">
+                <?php _e('I have shipped', ELEKTRON_ESCROW_DOMAIN); ?>
+            </button>
+        </form>
     <?php } ?>
+
+<?php } ?>
 
     <?php
     // Only shown to the seller, and only once payment is actually

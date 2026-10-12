@@ -99,6 +99,20 @@ if ($isBuyer && Params::getParam('cancel_order') === '1') {
     $errorMessage = __('This order can no longer be cancelled.', ELEKTRON_ESCROW_DOMAIN);
 }
 
+
+// Seller confirms shipment (only from FUNDED)
+if (!$isBuyer && Params::getParam('mark_shipped') === '1') {
+    osc_csrf_check();
+    if (OrderStateMachine::canTransition($order['status'], OrderStatus::SHIPPED)) {
+        $orderDao->updateByPrimaryKey(
+            ['status' => OrderStatus::SHIPPED, 'dt_mod_date' => date('Y-m-d H:i:s')],
+            $orderId
+        );
+        $order['status'] = OrderStatus::SHIPPED;
+        $statusMessage = __('Shipment confirmed. Waiting for the buyer to confirm receipt.', ELEKTRON_ESCROW_DOMAIN);
+    }
+}
+
 // The 'confirm_receipt' marker alone decides whether this is a
 // submission; the CSRF token itself is deliberately NOT inspected before
 // calling osc_csrf_check(). See controllers/wallet.php for why: an
@@ -112,7 +126,7 @@ if ($isBuyer && Params::getParam('cancel_order') === '1') {
 if ($isBuyer && Params::getParam('confirm_receipt') === '1') {
     osc_csrf_check();
 
-    if (!OrderStateMachine::canTransition($order['status'], OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE)) {
+    if ($order['status'] !== OrderStatus::SHIPPED || !OrderStateMachine::canTransition($order['status'], OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE)) {
         // Nothing to do: wrong status for this action (e.g. a stale page,
         // double submit, or a terminal order). No error shown, matching
         // this action's existing silent-no-op behavior for that case.
