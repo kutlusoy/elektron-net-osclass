@@ -21,10 +21,9 @@ Author URI: https://elektron-net.org
     // separator before the appended relative path.
     require_once __DIR__ . '/vendor/autoload.php';
     require_once __DIR__ . '/install.php';
-    elektron_escrow_ensure_schema();
-
     require_once __DIR__ . '/models/EscrowOrderDAO.php';
     require_once __DIR__ . '/models/EscrowWalletDAO.php';
+    elektron_escrow_ensure_schema();
     require_once __DIR__ . '/includes/config.php';   // elektron_escrow_config()
     require_once __DIR__ . '/includes/i18n.php';     // elektron_escrow_t()
     require_once __DIR__ . '/includes/formatting.php'; // elektron_escrow_format_amount()
