@@ -17,6 +17,11 @@ final class OrderStateMachine
         OrderStatus::AWAITING_PAYMENT => [OrderStatus::CONFIRMING],
         OrderStatus::CONFIRMING => [OrderStatus::FUNDED, OrderStatus::AWAITING_PAYMENT],
         OrderStatus::FUNDED => [
+            OrderStatus::SHIPPED,
+            OrderStatus::REFUNDED,
+            OrderStatus::CLAIMED_BY_SELLER,
+        ],
+        OrderStatus::SHIPPED => [
             OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE,
             OrderStatus::REFUNDED,
             OrderStatus::CLAIMED_BY_SELLER,

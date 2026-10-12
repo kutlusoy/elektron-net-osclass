@@ -19,6 +19,12 @@ final class OrderStatus
     /** Payment confirmed. Buyer-refund countdown (T1) is now running. */
     public const FUNDED = 'funded';
 
+    /**
+     * Seller has confirmed that the goods have been shipped.
+     * Buyer can now confirm receipt.
+     */
+    public const SHIPPED = 'shipped';
+
     /** Buyer confirmed receipt; release PSBT is out for the seller's signature. */
     public const RELEASE_PENDING_SELLER_SIGNATURE = 'release_pending_seller_signature';
 
