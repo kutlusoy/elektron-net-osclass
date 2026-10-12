@@ -220,6 +220,17 @@ elektron_escrow_table_style();
             </form>
         <?php } ?>
 
+    <?php } elseif ($order['status'] === OrderStatus::SHIPPED) { ?>
+        <p><?php _e('Seller has confirmed shipment.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+        <?php if ($isBuyer) { ?>
+            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
+                <?php echo osc_csrf_token_form(); ?>
+                <input type="hidden" name="confirm_receipt" value="1" />
+                <button type="submit" class="btn btn-primary" style="font-size:1.2em; padding:0.6em 1.4em;">
+                    <?php _e('I have received', ELEKTRON_ESCROW_DOMAIN); ?>
+                </button>
+            </form>
+        <?php } ?>
     <?php } elseif ($order['status'] === OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE) { ?>
         <p><?php echo osc_esc_html(elektron_escrow_t('order.release_pending_seller_signature')); ?></p>
 
