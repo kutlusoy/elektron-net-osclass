@@ -79,6 +79,20 @@ class EscrowDealDAO extends DAO
     }
 
     /**
+     * Number of unfinished deals the user takes part in, as buyer or seller.
+     */
+    public function countOpenForUser(int $userId): int
+    {
+        $this->dao->select('COUNT(*) AS total');
+        $this->dao->from($this->getTableName());
+        $this->dao->whereNotIn('status', DealStatus::TERMINAL);
+        $this->dao->where('(fk_i_buyer_id = ' . $userId . ' OR fk_i_seller_id = ' . $userId . ')');
+        $result = $this->dao->get();
+
+        return $result === false ? 0 : (int) $result->row()['total'];
+    }
+
+    /**
      * Deals whose payment the chain watcher still has to look for.
      *
      * @return array[]

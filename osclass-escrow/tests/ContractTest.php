@@ -7,6 +7,7 @@ require __DIR__ . '/bootstrap.php';
 use ElektronNet\Escrow\Address;
 use ElektronNet\Escrow\Bech32;
 use ElektronNet\Escrow\Descriptor;
+use ElektronNet\Escrow\EscrowKeys;
 use ElektronNet\Escrow\EscrowScript;
 use ElektronNet\Escrow\NetworkParams;
 use ElektronNet\Escrow\Psbt;
@@ -14,6 +15,7 @@ use ElektronNet\Escrow\PsbtBuilder;
 use ElektronNet\Escrow\PsbtVerifier;
 use ElektronNet\Escrow\PubKey;
 use ElektronNet\Escrow\RawTransaction;
+use ElektronNet\Escrow\WalletConnection;
 
 $G = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 $G2 = '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5';
@@ -125,5 +127,33 @@ $unsigned = new RawTransaction(2, [['txid' => str_repeat('cd', 32), 'vout' => 0,
 $raw = $unsigned->serializeWithoutWitness();
 $withWitness = substr($raw, 0, 4) . "\x00\x01" . substr($raw, 4, -4) . "\x02\x01\xaa\x01\xbb" . substr($raw, -4);
 check('txid ignores witness', RawTransaction::fromHex(bin2hex($withWitness))->txid() === $unsigned->txid());
+
+// Wallet connection
+$accountXpub = 'xpub6CUKWm4nWQEwWg7mBiA7PbAyvmzLb1DU898yUE9Zt78iPnFFc2YyodWtwqysPJbkEni56H2xFcZumxKHcmr8qVfAw5bwxq5YGRT97yeLxvC';
+$walletBody = 'wpkh([5a3469b6/84h/1370h/0h]' . $accountXpub . '/0/*)';
+$walletLine = $walletBody . '#' . Descriptor::checksum($walletBody);
+$walletDump = json_encode(['wallet_name' => 'escrow', 'descriptors' => [
+    ['desc' => $walletLine, 'timestamp' => 1, 'active' => true, 'internal' => false, 'range' => [0, 999], 'next' => 0],
+    ['desc' => 'wpkh([5a3469b6/84h/1370h/0h]' . $accountXpub . '/1/*)#00000000', 'timestamp' => 1, 'active' => true, 'internal' => true],
+]], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+$connection = WalletConnection::parse($walletDump, $mainnet);
+check('wallet dump yields the receiving account key', $connection['xpub'] === $accountXpub && $connection['fingerprint'] === '5a3469b6' && $connection['originPath'] === '84h/1370h/0h');
+check('wallet single line is accepted', WalletConnection::parse($walletLine, $mainnet)['xpub'] === $accountXpub);
+check('wallet escaped slashes are accepted', WalletConnection::parse(str_replace('/', '\\/', $walletDump), $mainnet)['xpub'] === $accountXpub);
+check('wallet wrong checksum rejected', throws(function () use ($walletBody, $mainnet) { WalletConnection::parse($walletBody . '#aaaaaaaa', $mainnet); }, InvalidArgumentException::class));
+check('wallet private key rejected', throws(function () use ($mainnet) {
+    WalletConnection::parse('wpkh(xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi/84h/1370h/0h/0/*)', $mainnet);
+}, InvalidArgumentException::class));
+check('wallet text without descriptor rejected', throws(function () use ($mainnet) { WalletConnection::parse('hello', $mainnet); }, InvalidArgumentException::class));
+check('wallet wrong network rejected', throws(function () use ($walletLine, $testnet) { WalletConnection::parse($walletLine, $testnet); }, InvalidArgumentException::class));
+check('wallet depth mismatch rejected', throws(function () use ($accountXpub, $mainnet) {
+    $body = 'wpkh([5a3469b6/84h/1370h]' . $accountXpub . '/0/*)';
+    WalletConnection::parse($body . '#' . Descriptor::checksum($body), $mainnet);
+}, InvalidArgumentException::class));
+
+$dealKeys = EscrowKeys::forDeal($accountXpub, 18, $mainnet);
+check('escrow keys sit in the reserved range', $dealKeys['mainIndex'] === 2000000036 && $dealKeys['exitIndex'] === 2000000037);
+check('escrow keys match the reference derivation', strpos($dealKeys['main'], '02cf2280') === 0 && substr($dealKeys['main'], -4) === '5da4' && strpos($dealKeys['exit'], '02c82b20') === 0 && substr($dealKeys['exit'], -4) === '7e46');
+check('escrow keys reject deal number zero', throws(function () use ($accountXpub, $mainnet) { EscrowKeys::forDeal($accountXpub, 0, $mainnet); }, InvalidArgumentException::class));
 
 finish();

@@ -34,9 +34,9 @@ wsh(or_d(multi(2,K1,K2),
 
 Every non-terminal status has one party who may act (`DealStatus::mayAct()`); `DealWorkflow::perform()` rejects every other action. The platform enforces only what protects against mistakes.
 
-1. Optional, at listing time: the seller stores two public keys (main and exit) and a payout address with the listing. They are copied into each new deal.
-2. Keys: whoever has no keys yet submits their two, in any order. The buyer may give theirs at checkout. With both keys the script, address, `T1` and `T2` are fixed.
-3. Payment: the buyer pays the escrow address from any wallet. Checking the address in the own wallet is recommended, not enforced. The watcher detects the payment and its confirmations. The deal can be cancelled until a payment is seen.
+1. Wallet connection, once per account: the user pastes the output of `listdescriptors` (without `true`) from the node console. The platform reads the account public key and refuses any text containing a private key. For each deal it derives the user's two public keys from that key in a reserved index range (`2000000000 + 2 * deal id`, and `+ 1`), so they never clash with normal addresses and can be recreated from the seed and the deal number. The key reveals the user's addresses and balances to the platform but cannot spend.
+2. Checkout: both parties must be connected. The keys are derived, the script, address, `T1` and `T2` are fixed at once and the deal starts at payment.
+3. Payment: the buyer scans the payment QR code with any wallet. The platform watches the block explorer, moves on by itself and refreshes the page. Preparing the own wallet for signing (below) is recommended before shipping, not enforced. The watcher detects the payment and its confirmations. The deal can be cancelled until a payment is seen.
 4. The seller confirms shipping once their own wallet shows the confirmed payment. The buyer confirms receipt, refused close to `T1`.
 5. Release: the seller builds the release PSBT in their wallet, paying their own address, signs it and submits it with that address. The buyer checks it, adds the second signature, finalizes, broadcasts and reports the transaction id. The buyer signs last and therefore has the final say.
 6. After `T1` the buyer, after `T2` the seller, creates a transaction in their own wallet with the matching lock time and a non-final sequence, signs, finalizes and broadcasts it, and reports the transaction id.
@@ -60,9 +60,9 @@ ECDSA validity is not verified by the plugin; the wallet that finalizes does tha
 
 The wallet must support miniscript descriptors. The deal page shows the commands with the deal's values filled in.
 
-1. Keys: `getnewaddress` and `getaddressinfo` twice, submit the two public keys. Electrum shows the public key under the address details and exports the private key per address; the key then goes into the node wallet's descriptor, Electrum itself cannot sign this escrow.
-2. Check: `deriveaddresses "<public descriptor>"` must print the escrow address.
-3. Prepare: write the own two private keys into the descriptor in place of the own two public keys (the key expression inside `wpkh(...)` of the `/0/*` descriptor from `listdescriptors true`, with `*` replaced by the `N` from the address's `hdkeypath`), add the checksum with `getdescriptorinfo`, import with `importdescriptors` (timestamp before the payment if it is already confirmed). `getaddressinfo` on the escrow address must report `ismine` and `solvable` true, otherwise `walletcreatefundedpsbt` stops with "Not solvable pre-selected input".
+1. Connect: `listdescriptors` once, paste the result (section 3, step 1).
+2. Prepare, per deal, before signing: `listdescriptors true` locally gives the wallet key (`xprv...`, never shown to anyone, never pasted into the platform). The deal page shows one descriptor with `<XPRV>/84h/1370h/0h/0/N` in place of the user's two keys and the other party's keys as public keys. After replacing `<XPRV>`, `getdescriptorinfo` adds the checksum and `importdescriptors` imports it (timestamp 0 if the payment is already confirmed). `getaddressinfo` on the escrow address must report `ismine` and `solvable` true and the address must equal the one shown, otherwise `walletcreatefundedpsbt` stops with "Not solvable pre-selected input". This is also the check that the platform did not swap a key.
+3. Electrum cannot check or sign this escrow (it only signs for addresses it owns) and is not modified. It can pay the escrow address by QR code.
 4. Alternatively the deal page builds an unsigned PSBT on request (`PsbtBuilder`: spends exactly the confirmed escrow outputs to an address and fee rate the party gives; nothing is stored) that the party loads into the wallet window and signs. The wallet shows the transaction before signing.
 5. Release or exit: `walletcreatefundedpsbt` with the escrow outputs as inputs (`add_inputs` false, fee subtracted from the output, an explicit `fee_rate` because a node without fee estimates refuses to guess, lock time and sequence for the exits), `walletprocesspsbt`, then `finalizepsbt` and `sendrawtransaction`.
 
@@ -79,5 +79,5 @@ These commands were written from the Bitcoin Core RPC reference and MUST be veri
 
 ## 7. Open Questions
 
-1. Which wallets beyond the node wallet must be supported, and how do they import the escrow descriptor?
+1. Which wallets beyond the node wallet must be supported, and how do they import the escrow descriptor? The Electrum master public key (`zpub`, no origin) is not read yet.
 2. Fee handling when fees rise between creating a deal and using an exit; the wallet building the transaction chooses the fee.

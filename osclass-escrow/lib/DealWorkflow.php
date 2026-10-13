@@ -15,8 +15,6 @@ use RuntimeException;
 final class DealWorkflow
 {
     private const ACTION_ROLES = [
-        'seller_submit_key' => 'seller',
-        'buyer_submit_key' => 'buyer',
         'seller_mark_shipped' => 'seller',
         'buyer_mark_received' => 'buyer',
         'seller_submit_release' => 'seller',
@@ -61,10 +59,6 @@ final class DealWorkflow
         };
 
         switch ($action) {
-            case 'seller_submit_key':
-                return $this->submitKeys($deal, 'seller', $get('pubkey'), $get('exit_pubkey'), $now);
-            case 'buyer_submit_key':
-                return $this->submitKeys($deal, 'buyer', $get('pubkey'), $get('exit_pubkey'), $now);
             case 'seller_mark_shipped':
                 return $this->advance($deal, DealStatus::FUNDED, DealStatus::SHIPPED);
             case 'buyer_mark_received':
@@ -107,33 +101,40 @@ final class DealWorkflow
     }
 
     /**
-     * Fields for a new deal. Keys given up front (the seller's from the
-     * listing, the buyer's from checkout) are checked and stored; with both
-     * parties' keys present the escrow is fixed right away.
+     * Fields for a new deal from the four public keys the two connected
+     * wallets provide. The escrow is fixed right away: script, address and
+     * both dates are set and never change afterwards.
      *
+     * @param array{main:string,exit:string} $sellerKeys
+     * @param array{main:string,exit:string} $buyerKeys
      * @return array<string,mixed>
      */
-    public function create(?string $sellerKey, ?string $sellerExitKey, ?string $buyerKey, ?string $buyerExitKey, int $now): array
+    public function create(array $sellerKeys, array $buyerKeys, int $now): array
     {
-        $deal = ['status' => DealStatus::AWAITING_KEYS];
-        foreach (['seller' => [$sellerKey, $sellerExitKey], 'buyer' => [$buyerKey, $buyerExitKey]] as $role => [$main, $exit]) {
-            if (($main === null || $main === '') && ($exit === null || $exit === '')) {
-                continue;
-            }
-            $deal = array_merge($deal, $this->cleanKeyPair($role, (string) $main, (string) $exit));
+        $seller = $this->cleanKeyPair('seller', $sellerKeys['main'], $sellerKeys['exit']);
+        $buyer = $this->cleanKeyPair('buyer', $buyerKeys['main'], $buyerKeys['exit']);
+        $refundLocktime = $this->timeouts->buyerRefundLocktime($now);
+        $claimLocktime = $this->timeouts->sellerReleaseLocktime($now);
+        try {
+            $witnessScript = EscrowScript::witnessScriptHex(
+                $seller['seller_pubkey'],
+                $seller['seller_exit_pubkey'],
+                $buyer['buyer_pubkey'],
+                $buyer['buyer_exit_pubkey'],
+                $refundLocktime,
+                $claimLocktime
+            );
+        } catch (InvalidArgumentException $e) {
+            throw new DealException('All four public keys must be different. Buyer and seller must not share a wallet.');
         }
 
-        return $this->fixEscrowIfComplete($deal, $now);
-    }
-
-    private function submitKeys(array $deal, string $role, string $mainKey, string $exitKey, int $now): array
-    {
-        $this->expect($deal, DealStatus::AWAITING_KEYS);
-        if (!empty($deal[$role . '_pubkey'])) {
-            throw new DealException('This step is not available at the moment.');
-        }
-
-        return $this->fixEscrowIfComplete(array_merge($deal, $this->cleanKeyPair($role, $mainKey, $exitKey)), $now);
+        return $seller + $buyer + [
+            'status' => DealStatus::AWAITING_PAYMENT,
+            'buyer_refund_locktime' => $refundLocktime,
+            'seller_release_locktime' => $claimLocktime,
+            'witness_script_hex' => $witnessScript,
+            'escrow_address' => EscrowScript::address($witnessScript, $this->network),
+        ];
     }
 
     /**
@@ -141,9 +142,6 @@ final class DealWorkflow
      */
     private function cleanKeyPair(string $role, string $mainKey, string $exitKey): array
     {
-        if ($mainKey === '' || $exitKey === '') {
-            throw new DealException('Please give both public keys: the main key and the exit key.');
-        }
         $main = $this->cleanPubKey($mainKey);
         $exit = $this->cleanPubKey($exitKey);
         if ($main === $exit) {
@@ -151,51 +149,6 @@ final class DealWorkflow
         }
 
         return [$role . '_pubkey' => $main, $role . '_exit_pubkey' => $exit];
-    }
-
-    /**
-     * With both parties' keys known, fixes the escrow: script, address and
-     * both dates are set and never change afterwards.
-     *
-     * @return array<string,mixed> the key fields plus, when complete, the escrow fields and the next status
-     */
-    private function fixEscrowIfComplete(array $deal, int $now): array
-    {
-        $columns = ['seller_pubkey', 'seller_exit_pubkey', 'buyer_pubkey', 'buyer_exit_pubkey'];
-        $fields = ['status' => DealStatus::AWAITING_KEYS];
-        foreach ($columns as $column) {
-            if (!empty($deal[$column])) {
-                $fields[$column] = $deal[$column];
-            }
-        }
-        foreach ($columns as $column) {
-            if (empty($deal[$column])) {
-                return $fields;
-            }
-        }
-
-        $refundLocktime = $this->timeouts->buyerRefundLocktime($now);
-        $claimLocktime = $this->timeouts->sellerReleaseLocktime($now);
-        try {
-            $witnessScript = EscrowScript::witnessScriptHex(
-                $deal['seller_pubkey'],
-                $deal['seller_exit_pubkey'],
-                $deal['buyer_pubkey'],
-                $deal['buyer_exit_pubkey'],
-                $refundLocktime,
-                $claimLocktime
-            );
-        } catch (InvalidArgumentException $e) {
-            throw new DealException('All four public keys must be different. Buyer and seller must not share a key.');
-        }
-        $fields['status'] = DealStatus::AWAITING_PAYMENT;
-
-        return $fields + [
-            'buyer_refund_locktime' => $refundLocktime,
-            'seller_release_locktime' => $claimLocktime,
-            'witness_script_hex' => $witnessScript,
-            'escrow_address' => EscrowScript::address($witnessScript, $this->network),
-        ];
     }
 
     private function buyerMarkReceived(array $deal, int $now): array

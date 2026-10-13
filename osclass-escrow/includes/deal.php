@@ -75,7 +75,7 @@ function elektron_escrow_deal_store(array $deal, array $updates, int $userId, st
     }
 
     $updated = array_merge($deal, $updates);
-    if ($updated['status'] !== $deal['status'] || ($updated['seller_pubkey'] ?? null) !== ($deal['seller_pubkey'] ?? null) || ($updated['buyer_pubkey'] ?? null) !== ($deal['buyer_pubkey'] ?? null)) {
+    if ($updated['status'] !== $deal['status']) {
         elektron_escrow_send_turn_email($updated);
     }
 

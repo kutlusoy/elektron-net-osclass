@@ -23,29 +23,28 @@ The escrow is a single P2WSH miniscript, so every spending path is enforced on c
 - after the refund date (T1) the buyer alone can reclaim, with the buyer's exit key,
 - after the claim date (T2) the seller alone can claim, with the seller's exit key.
 
-Each party therefore gives two different public keys. A miniscript script may not contain the same key twice, so the exit paths need their own keys.
+Each party therefore contributes two different public keys. A miniscript script may not contain the same key twice, so the exit paths need their own keys. Nobody types keys: both come from the wallet the user connected once.
 
 No pre-signed transactions and no data from the marketplace are needed for the exits. Each party creates the transaction in their own wallet when it is needed.
 
 ### Steps
 
-Every step can only be taken by the party it belongs to. The deal page names the next step and explains each term with a "?" helper and a "How do I get this?" block for keys and addresses (node wallet, Electrum, other wallets).
+Every step can only be taken by the party it belongs to. The deal page names the next step and explains each term with a "?" helper and a "How do I get this?" block for addresses (node wallet, Electrum, other wallets).
 
-1. **Listing (optional).** The seller can enter two public keys (a main key and an exit key) and a payout address when creating the listing. That skips the seller's key step later.
-2. **Order placed.** The buyer starts the escrow purchase, enters shipping details and optionally their two public keys.
-3. **Keys.** Whoever has not given their two public keys yet submits them, in any order. With both keys the escrow address, its descriptor and both dates are fixed.
-4. **Payment.** The buyer checks the address in their own wallet (recommended) and pays it. A chain watcher and the deal page detect the payment and the confirmations.
-5. **Delivery.** The seller confirms shipping, the buyer confirms receipt. The seller ships only once their own wallet shows the confirmed payment.
-6. **Release.** The seller creates the release transaction in their wallet, paying themselves, signs it and pastes it into the deal page, which checks that it spends exactly the escrow payment, pays the stated address and carries only the seller's signature. The buyer checks it in their wallet, adds the second signature, broadcasts it and reports the transaction id.
-7. **If something goes wrong.** After T1 the buyer can reclaim the funds alone, after T2 the seller can claim them alone, each with a transaction from their own wallet. The deal page prefills the commands.
+1. **Connect wallet (once per account).** The user pastes the output of the node console command `listdescriptors` (without `true`) and optionally a payout address. Only public data is read; text with a private key is refused. Both parties need this before a deal.
+2. **Order placed.** The buyer starts the escrow purchase and enters shipping details. The platform derives both parties' keys for this deal from their connected wallets and fixes the escrow address, its descriptor and both dates.
+3. **Payment.** The deal page shows a payment QR code. The buyer scans it with any wallet. The platform watches the block explorer and moves on by itself.
+4. **Delivery.** The seller confirms shipping, the buyer confirms receipt. The seller ships only once their own wallet shows the confirmed payment.
+5. **Release.** The seller creates the release transaction in their wallet, paying themselves, signs it and pastes it into the deal page, which checks that it spends exactly the escrow payment, pays the stated address and carries only the seller's signature. The buyer checks it in their wallet, adds the second signature, broadcasts it and reports the transaction id.
+6. **If something goes wrong.** After T1 the buyer can reclaim the funds alone, after T2 the seller can claim them alone, each with a transaction from their own wallet. The deal page prefills the commands.
 
 A deal can be cancelled by either party until a payment is detected.
 
-The platform enforces only what protects against mistakes: who may act, that submitted keys are real public keys, that the release PSBT matches the escrow, and that receipt cannot be confirmed too close to the refund date. It does not force confirmations of things it cannot verify, such as having checked an address.
+The platform enforces only what protects against mistakes: who may act, that connected text holds no private key, that the release PSBT matches the escrow, and that receipt cannot be confirmed too close to the refund date. It does not force confirmations of things it cannot verify, such as having checked an address.
 
 ## Trustless by design
 
-- No private key is ever typed into the marketplace.
+- No private key is ever typed into the marketplace. A pasted private key is refused.
 - Nobody builds a transaction for you. The marketplace shows what to do and checks what comes back; you create and sign in your own wallet.
 - All data on the deal page that was submitted by a party is shown as reported. Only confirmations come from the chain. Every party must verify addresses, amounts and transactions in their own wallet.
 

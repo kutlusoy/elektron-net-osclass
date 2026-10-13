@@ -29,32 +29,18 @@ function step(DealWorkflow $flow, array &$deal, string $action, string $role, ar
     $deal = array_merge($deal, $flow->perform($action, $deal, $role, $input, $now));
 }
 
-// Keys in any order, escrow fixed once both parties gave theirs
-$open = ['status' => DealStatus::AWAITING_KEYS, 'amount_lep' => 1000000, 'seller_pubkey' => null, 'buyer_pubkey' => null];
+// Both wallets are connected, so the escrow is fixed at creation
+$sellerPair = ['main' => $sellerKey, 'exit' => $sellerExit];
+$buyerPair = ['main' => $buyerKey, 'exit' => $buyerExit];
 $bad = '02' . str_repeat('00', 31) . '05';
-check('invalid key rejected', rejected(function () use ($flow, $open, $sellerExit, $bad, $now) { $flow->perform('seller_submit_key', $open, 'seller', ['pubkey' => $bad, 'exit_pubkey' => $sellerExit], $now); }));
-check('both keys required', rejected(function () use ($flow, $open, $sellerKey, $now) { $flow->perform('seller_submit_key', $open, 'seller', ['pubkey' => $sellerKey], $now); }));
-check('main and exit key must differ', rejected(function () use ($flow, $open, $sellerKey, $now) { $flow->perform('seller_submit_key', $open, 'seller', ['pubkey' => $sellerKey, 'exit_pubkey' => $sellerKey], $now); }));
-check('buyer cannot submit the seller keys', rejected(function () use ($flow, $open, $sellerKey, $sellerExit, $now) { $flow->perform('seller_submit_key', $open, 'buyer', ['pubkey' => $sellerKey, 'exit_pubkey' => $sellerExit], $now); }));
-$deal = array_merge($open, $flow->perform('buyer_submit_key', $open, 'buyer', ['pubkey' => $buyerKey, 'exit_pubkey' => $buyerExit], $now));
-check('buyer keys first keep waiting', $deal['status'] === DealStatus::AWAITING_KEYS && !isset($deal['escrow_address']) && $deal['buyer_exit_pubkey'] === $buyerExit);
-check('buyer cannot submit twice', rejected(function () use ($flow, $deal, $buyerKey, $buyerExit, $now) { $flow->perform('buyer_submit_key', $deal, 'buyer', ['pubkey' => $buyerKey, 'exit_pubkey' => $buyerExit], $now); }));
-check('shared key rejected', rejected(function () use ($flow, $deal, $buyerKey, $sellerExit, $now) { $flow->perform('seller_submit_key', $deal, 'seller', ['pubkey' => $buyerKey, 'exit_pubkey' => $sellerExit], $now); }));
-check('mayAct follows the missing keys', DealStatus::mayAct($deal, 'seller') && !DealStatus::mayAct($deal, 'buyer'));
-step($flow, $deal, 'seller_submit_key', 'seller', ['pubkey' => $sellerKey, 'exit_pubkey' => $sellerExit], $now);
+$deal = ['amount_lep' => 1000000] + $flow->create($sellerPair, $buyerPair, $now);
 check('escrow fixed with both dates', $deal['status'] === DealStatus::AWAITING_PAYMENT && strpos($deal['escrow_address'], 'tb1q') === 0
     && $deal['buyer_refund_locktime'] === $now + 30 * 86400 && $deal['seller_release_locktime'] === $now + 60 * 86400);
+check('create rejects an invalid key', rejected(function () use ($flow, $bad, $sellerExit, $buyerPair, $now) { $flow->create(['main' => $bad, 'exit' => $sellerExit], $buyerPair, $now); }));
+check('create rejects equal main and exit key', rejected(function () use ($flow, $sellerKey, $buyerPair, $now) { $flow->create(['main' => $sellerKey, 'exit' => $sellerKey], $buyerPair, $now); }));
+check('create rejects a shared key', rejected(function () use ($flow, $sellerPair, $sellerKey, $buyerExit, $now) { $flow->create($sellerPair, ['main' => $sellerKey, 'exit' => $buyerExit], $now); }));
+check('only the buyer acts while payment is awaited', DealStatus::mayAct($deal, 'buyer') && !DealStatus::mayAct($deal, 'seller'));
 check('cancel allowed before payment', $flow->perform('cancel', $deal, 'seller', [], $now)['status'] === DealStatus::CANCELLED);
-
-// Keys known up front: listing keys and checkout keys
-$created = $flow->create($sellerKey, $sellerExit, $buyerKey, $buyerExit, $now);
-check('create with all keys fixes the escrow', $created['status'] === DealStatus::AWAITING_PAYMENT && $created['escrow_address'] === $deal['escrow_address']);
-$half = $flow->create($sellerKey, $sellerExit, null, null, $now);
-check('create with one party waits for the other', $half['status'] === DealStatus::AWAITING_KEYS && $half['seller_pubkey'] === $sellerKey && !isset($half['buyer_pubkey']));
-check('create with no keys waits for both', $flow->create(null, null, null, null, $now) === ['status' => DealStatus::AWAITING_KEYS]);
-check('create rejects half a pair', rejected(function () use ($flow, $sellerKey, $now) { $flow->create($sellerKey, null, null, null, $now); }));
-check('create rejects an invalid key', rejected(function () use ($flow, $sellerExit, $now) { $flow->create('nonsense', $sellerExit, null, null, $now); }));
-check('create rejects a shared key', rejected(function () use ($flow, $sellerKey, $sellerExit, $buyerExit, $now) { $flow->create($sellerKey, $sellerExit, $sellerKey, $buyerExit, $now); }));
 
 check('chain: short payment ignored', $flow->advanceFromChain($deal, 500000, 5, 3) === []);
 check('chain: seen', $flow->advanceFromChain($deal, 1000000, 0, 3) === ['status' => DealStatus::CONFIRMING]);
