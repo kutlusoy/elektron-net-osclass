@@ -87,6 +87,10 @@ check('unsigned rejected', throws(function () use ($psbt, $expected) { PsbtVerif
 check('other party signature rejected', throws(function () use ($psbt, $expected, $G3) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G3), $expected); }, RuntimeException::class));
 check('both signatures rejected for the seller upload', throws(function () use ($good, $expected, $G3) { PsbtVerifier::assertReleasePsbt(withSignature($good, $G3), $expected); }, RuntimeException::class));
 check('exit key signature rejected', throws(function () use ($psbt, $expected, $G2) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G2), $expected); }, RuntimeException::class));
+$withExit = $expected + ['signerExitPubKey' => $G2];
+check('main and exit signature of the seller accepted', PsbtVerifier::assertReleasePsbt(withSignature($good, $G2), $withExit)['feeLep'] === 1400);
+check('exit signature alone still rejected', throws(function () use ($psbt, $withExit, $G2) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G2), $withExit); }, RuntimeException::class));
+check('other party signature rejected next to the exit key', throws(function () use ($good, $withExit, $G2, $G3) { PsbtVerifier::assertReleasePsbt(withSignature(withSignature($good, $G2), $G3), $withExit); }, RuntimeException::class));
 check('bad sighash rejected', throws(function () use ($psbt, $expected, $G) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G, "\x30\x06\x02\x01\x01\x02\x01\x01\x02"), $expected); }, RuntimeException::class));
 check('wrong payout rejected', throws(function () use ($script, $funding, $expected, $G, $testnet) {
     $other = Address::toScriptPubKeyHex('tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7', $testnet);

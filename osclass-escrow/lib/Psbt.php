@@ -45,6 +45,11 @@ final class Psbt
      */
     public static function parse(string $text): self
     {
+        // A '+' that a form layer turned into a space is restored when the text has no line breaks.
+        $text = trim($text);
+        if (strpos($text, ' ') !== false && !preg_match('/[\r\n]/', $text)) {
+            $text = str_replace(' ', '+', $text);
+        }
         $text = preg_replace('/\s+/', '', $text);
         if ($text === '' || strlen($text) > self::MAX_BYTES * 2) {
             throw new InvalidArgumentException('Empty or oversized PSBT.');

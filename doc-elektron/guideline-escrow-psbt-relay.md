@@ -53,9 +53,9 @@ A key swapped by the platform cannot cost the buyer money: the seller's wallet w
 - the fee is not negative and at most 5 percent of the input value,
 - every input carries a witness UTXO or a matching previous transaction for the escrow output, and its witness script, if present, equals the deal's script,
 - the only other fields are partial signatures, `SIGHASH_ALL` sighash type and BIP32 derivations,
-- every partial signature is DER-shaped, ends in `SIGHASH_ALL`, and the signing keys are exactly the seller's key on every input.
+- every partial signature is DER-shaped, ends in `SIGHASH_ALL`, and the signing keys are the seller's main key on every input, optionally together with the seller's exit key (a node wallet that holds both keys signs with both, the exit signature is harmless). A signature of any other key is rejected.
 
-ECDSA validity is not verified by the plugin; the wallet that finalizes does that. Real signatures from a second library were accepted by these checks.
+ECDSA validity is not verified by the plugin; the wallet that finalizes does that. Real signatures from a second library and a PSBT signed by the node wallet were accepted by these checks.
 
 ## 5. Wallet steps (node wallet)
 

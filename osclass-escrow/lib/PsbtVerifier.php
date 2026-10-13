@@ -81,7 +81,8 @@ final class PsbtVerifier
      *   fundingOutputs:array<int,array{txid:string,vout:int,amountLep:int}>,
      *   payoutScriptPubKeyHex:string,
      *   allowedPubKeys:string[],
-     *   signerPubKey:string
+     *   signerPubKey:string,
+     *   signerExitPubKey?:string
      * } $expected
      * @return array{feeLep:int,outputAmountLep:int}
      * @throws RuntimeException describing the first deviation found
@@ -112,7 +113,7 @@ final class PsbtVerifier
 
         $totalIn = 0;
         $signers = null;
-        $allowed = array_map('strtolower', $expected['allowedPubKeys']);
+        $allowed = array_map('strtolower', array_merge($expected['allowedPubKeys'], [$expected['signerExitPubKey'] ?? '']));
         foreach ($tx->inputs() as $index => $input) {
             $map = $psbt->inputMaps()[$index];
             $amount = $expectedOutpoints[$input['txid'] . ':' . $input['vout']];
@@ -134,8 +135,10 @@ final class PsbtVerifier
                 throw new RuntimeException('Not every input was signed by the same keys.');
             }
         }
-        if ($signers !== [strtolower($expected['signerPubKey'])]) {
-            throw new RuntimeException('The PSBT must carry exactly your signature and no other.');
+        // A wallet that holds both of the signer's keys signs with both; the exit key signature is harmless.
+        $own = array_filter([strtolower($expected['signerPubKey']), strtolower($expected['signerExitPubKey'] ?? '')]);
+        if (!in_array(strtolower($expected['signerPubKey']), $signers, true) || array_diff($signers, $own) !== []) {
+            throw new RuntimeException('The PSBT must carry your signature and no signature of the other party.');
         }
 
         $outputs = $tx->outputs();

@@ -198,9 +198,10 @@ final class DealWorkflow
                 'payoutScriptPubKeyHex' => $payoutScript,
                 'allowedPubKeys' => [$deal['seller_pubkey'], $deal['buyer_pubkey']],
                 'signerPubKey' => $deal['seller_pubkey'],
+                'signerExitPubKey' => $deal['seller_exit_pubkey'],
             ]);
         } catch (InvalidArgumentException $e) {
-            throw new DealException('This is not a valid PSBT.');
+            throw new DealException('This is not a valid PSBT: ' . $e->getMessage());
         } catch (RuntimeException $e) {
             throw new DealException($e->getMessage());
         }
