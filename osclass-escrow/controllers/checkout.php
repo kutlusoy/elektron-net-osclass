@@ -82,6 +82,11 @@ if ($walletDao->forUser((int) $item['fk_i_user_id']) === null) {
 
 $dealDao = EscrowDealDAO::newInstance();
 $existingDeal = $dealDao->findOpenByItemAndBuyer($itemId, $buyerId);
+if ($existingDeal !== null && empty($existingDeal['escrow_address'])) {
+    // A deal whose escrow was never fixed has nothing to pay and is dropped, so the buyer can start again.
+    $dealDao->delete(['pk_i_id' => (int) $existingDeal['pk_i_id']]);
+    $existingDeal = null;
+}
 if ($existingDeal !== null) {
     elektron_escrow_render_order_status($existingDeal, $buyerId);
     exit;
@@ -113,20 +118,21 @@ if (Params::getParam('confirm_checkout') === '1') {
     }
 
     $sellerId = (int) $item['fk_i_user_id'];
-    $dealId = $dealDao->insertDeal([
-        'fk_i_item_id' => $itemId,
-        'fk_i_buyer_id' => $buyerId,
-        'fk_i_seller_id' => $sellerId,
-        'amount_lep' => (int) round($amountElek * 100000000),
-        'status' => DealStatus::AWAITING_PAYMENT,
-        'buyer_shipping_name' => $shippingName,
-        'buyer_shipping_address' => $shippingAddress,
-        'buyer_shipping_phone' => $shippingPhone,
-        'buyer_contact_email' => $contactEmail,
-        'seller_payout_address' => $walletDao->forUser($sellerId)['s_payout_address'],
-        'dt_pub_date' => date('Y-m-d H:i:s'),
-    ]);
+    $dealId = 0;
     try {
+        $dealId = $dealDao->insertDeal([
+            'fk_i_item_id' => $itemId,
+            'fk_i_buyer_id' => $buyerId,
+            'fk_i_seller_id' => $sellerId,
+            'amount_lep' => (int) round($amountElek * 100000000),
+            'status' => DealStatus::AWAITING_PAYMENT,
+            'buyer_shipping_name' => $shippingName,
+            'buyer_shipping_address' => $shippingAddress,
+            'buyer_shipping_phone' => $shippingPhone,
+            'buyer_contact_email' => $contactEmail,
+            'seller_payout_address' => $walletDao->forUser($sellerId)['s_payout_address'],
+            'dt_pub_date' => date('Y-m-d H:i:s'),
+        ]);
         // The keys depend on the deal number, so the row comes first and the escrow is fixed right after.
         $escrowFields = elektron_escrow_workflow()->create(
             elektron_escrow_keys_for($sellerId, $dealId),
@@ -134,17 +140,25 @@ if (Params::getParam('confirm_checkout') === '1') {
             time()
         );
     } catch (\Throwable $e) {
-        $dealDao->delete(['pk_i_id' => $dealId]);
+        if ($dealId > 0) {
+            $dealDao->delete(['pk_i_id' => $dealId]);
+        }
         $errorMessage = $e instanceof DealException ? __($e->getMessage(), ELEKTRON_ESCROW_DOMAIN) : __('The escrow could not be prepared. Reconnect your wallet and try again.', ELEKTRON_ESCROW_DOMAIN);
         $timeoutPolicy = $config->timeoutPolicy();
         require osc_plugins_path() . 'osclass-escrow/views/checkout.php';
         exit;
     }
     $dealDao->updateByPrimaryKey($escrowFields, $dealId);
+    $deal = $dealDao->findByPrimaryKey($dealId);
+    if (!$deal || empty($deal['escrow_address'])) {
+        $dealDao->delete(['pk_i_id' => $dealId]);
+        $errorMessage = __('The escrow could not be prepared. Reconnect your wallet and try again.', ELEKTRON_ESCROW_DOMAIN);
+        $timeoutPolicy = $config->timeoutPolicy();
+        require osc_plugins_path() . 'osclass-escrow/views/checkout.php';
+        exit;
+    }
     $dealDao->addEvent($dealId, $buyerId, 'created');
     $dealDao->addEvent($dealId, 0, 'escrow_fixed');
-
-    $deal = $dealDao->findByPrimaryKey($dealId);
     elektron_escrow_send_turn_email($deal, true);
     elektron_escrow_render_order_status($deal, $buyerId);
     exit;
