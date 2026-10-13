@@ -51,7 +51,7 @@ final class WalletConnection
             throw new InvalidArgumentException('No wallet key was found. Paste the whole result of the command gethdkeys.');
         }
         if (count($masters) > 1) {
-            throw new InvalidArgumentException('The text contains several wallet keys. Run gethdkeys {"active_only":true} and paste that result.');
+            throw new InvalidArgumentException("The text contains several wallet keys. Run gethdkeys '{\"active_only\":true}' and paste that result.");
         }
         $xpub = (string) array_key_first($masters);
 

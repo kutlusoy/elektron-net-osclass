@@ -41,7 +41,7 @@ elektron_escrow_table_style();
         <ol>
             <li><?php _e('Open the Elektron Net node wallet, menu Window, then Console. Choose your wallet in the dropdown at the top.', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('console'); ?></li>
             <li><?php _e('Type the command below and press Enter. Do not add "private": that would show the private key.', ELEKTRON_ESCROW_DOMAIN); ?>
-                <code class="elektron-escrow-code">gethdkeys {"active_only":true}</code></li>
+                <code class="elektron-escrow-code">gethdkeys '{"active_only":true}'</code></li>
             <li><?php _e('Select the whole result, copy it and paste it here.', ELEKTRON_ESCROW_DOMAIN); ?></li>
         </ol>
         <p>
