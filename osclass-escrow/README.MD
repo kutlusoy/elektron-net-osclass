@@ -1,4 +1,4 @@
-# Elektron Net Payments, `osclass-escrow` API Specification
+# Elektron Net Osclass, `osclass-escrow` API Specification
 
 - **Version:** 0.1.0 (draft)
 - **Date:** October 13, 2026

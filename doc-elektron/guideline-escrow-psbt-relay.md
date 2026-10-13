@@ -1,10 +1,10 @@
-# Elektron Net: `elektron-net-payments` Escrow Protocol Guideline
+# Elektron Net: `elektron-net-osclass` Escrow Protocol Guideline
 
 - **Version:** 0.2 (draft)
 - **Date:** October 13, 2026
 - **Audience:** Maintainers of `osclass-escrow`; buyers and sellers who sign escrow transactions
 - **Reference implementation:** [`elektron-net`](https://github.com/kutlusoy/elektron-net) (`src/script/miniscript.cpp`, `src/script/descriptor.cpp`, `src/wallet/`), treat as ground truth for anything the doc references
-- **Consumer:** [`elektron-net-payments`](https://github.com/kutlusoy/elektron-net-payments) (`osclass-escrow/lib/`, `osclass-escrow/tests/`)
+- **Consumer:** [`elektron-net-osclass`](https://github.com/kutlusoy/elektron-net-osclass) (`osclass-escrow/lib/`, `osclass-escrow/tests/`)
 - **See also:** [`README.MD`](../README.MD), [`osclass-escrow/README.MD`](../osclass-escrow/README.MD)
 
 ---

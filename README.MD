@@ -1,4 +1,4 @@
-# Elektron Net Payments, Osclass Escrow
+# Elektron Net Osclass, Osclass Escrow
 
 - **Version:** 0.3 (draft)
 - **Date:** October 13, 2026
@@ -90,7 +90,7 @@ git push origin osclass-v0.1.0
 ## Repository structure
 
 ```
-elektron-net-payments/
+elektron-net-osclass/
     osclass-escrow/         The Osclass plugin (lib/ holds the escrow logic, tests/ its checks)
     scripts/                Build script for the plugin zip
     .github/workflows/      Release workflow
