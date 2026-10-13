@@ -21,8 +21,12 @@ final class DealWorkflow
         'buyer_mark_released' => 'buyer',
         'buyer_mark_refunded' => 'buyer',
         'seller_mark_claimed' => 'seller',
+        'confirm_prepared' => null,
         'cancel' => null,
     ];
+
+    /** Actions that need the party to have confirmed that their wallet is prepared. */
+    private const NEEDS_PREPARED_WALLET = ['seller_mark_shipped', 'buyer_mark_received', 'seller_submit_release', 'buyer_mark_released'];
 
     /** @var NetworkParams */
     private $network;
@@ -54,11 +58,20 @@ final class DealWorkflow
         if ($requiredRole !== null && $requiredRole !== $role) {
             throw new DealException('This step is not available at the moment.');
         }
+        if (in_array($action, self::NEEDS_PREPARED_WALLET, true) && empty($deal[$role . '_prepared_at'])) {
+            throw new DealException('Confirm first that you prepared your wallet for this deal.');
+        }
         $get = function (string $name) use ($input): string {
             return isset($input[$name]) ? trim((string) $input[$name]) : '';
         };
 
         switch ($action) {
+            case 'confirm_prepared':
+                if (DealStatus::isTerminal($deal['status']) || $get('confirmed') !== '1') {
+                    throw new DealException('Tick the box to confirm that you prepared your wallet.');
+                }
+
+                return [$role . '_prepared_at' => date('Y-m-d H:i:s', $now)];
             case 'seller_mark_shipped':
                 return $this->advance($deal, DealStatus::FUNDED, DealStatus::SHIPPED);
             case 'buyer_mark_received':

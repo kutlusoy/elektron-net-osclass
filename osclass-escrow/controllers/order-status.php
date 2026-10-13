@@ -63,7 +63,7 @@ if ($action !== '') {
         }
     } else {
         $input = [];
-        foreach (['address', 'psbt', 'txid'] as $field) {
+        foreach (['address', 'psbt', 'txid', 'confirmed'] as $field) {
             $input[$field] = (string) Params::getParam($field, false, false);
         }
         try {
