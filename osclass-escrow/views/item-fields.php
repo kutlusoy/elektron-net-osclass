@@ -1,5 +1,6 @@
 <?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
 /** @var string $pubKey */
+/** @var string $exitPubKey */
 /** @var string $payoutAddress */
 
 elektron_escrow_table_style();
@@ -8,8 +9,12 @@ elektron_escrow_table_style();
     <legend><?php _e('Elektron escrow (optional)', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('payout_optional'); ?></legend>
     <input type="hidden" name="elektron_escrow_fields" value="1" />
     <p>
-        <label for="elektron_escrow_pubkey"><?php _e('Your public key', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('pubkey'); ?><br />
+        <label for="elektron_escrow_pubkey"><?php _e('Your main public key', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('pubkey'); ?><br />
         <input type="text" name="elektron_escrow_pubkey" id="elektron_escrow_pubkey" size="70" maxlength="66" autocomplete="off" placeholder="02..." value="<?php echo osc_esc_html($pubKey); ?>" />
+    </p>
+    <p>
+        <label for="elektron_escrow_exit_pubkey"><?php _e('Your exit public key', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('exit_pubkey'); ?><br />
+        <input type="text" name="elektron_escrow_exit_pubkey" id="elektron_escrow_exit_pubkey" size="70" maxlength="66" autocomplete="off" placeholder="03..." value="<?php echo osc_esc_html($exitPubKey); ?>" />
     </p>
     <?php echo elektron_escrow_howto('pubkey'); ?>
     <p>

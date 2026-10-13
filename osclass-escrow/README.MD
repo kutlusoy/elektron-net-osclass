@@ -132,7 +132,7 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 | `amount_lep` | The item's price in lep (1 ELEK = 100,000,000 lep), frozen at checkout. |
 | `status` | One of `ElektronNet\\Escrow\\DealStatus`. |
 | `buyer_shipping_*`, `buyer_contact_email` | Collected at checkout, shown to the seller once the payment is confirmed. |
-| `seller_pubkey`, `buyer_pubkey` | Compressed public keys the parties submitted, hex. The plugin never generates or sees a private key. The seller's may come from the listing, the buyer's from checkout. |
+| `seller_pubkey`, `seller_exit_pubkey`, `buyer_pubkey`, `buyer_exit_pubkey` | Compressed public keys the parties submitted, hex: a main key for the cooperative path and an exit key for the refund or claim path each. The plugin never generates or sees a private key. The seller's may come from the listing, the buyer's from checkout. |
 | `escrow_address`, `witness_script_hex` | The miniscript escrow built from both keys and both dates (`EscrowScript`). Fixed once the buyer key is submitted. |
 | `buyer_refund_locktime`, `seller_release_locktime` | T1 and T2 as unix timestamps, set together with the escrow address and written into its script. |
 | `funding_outputs` | JSON list of the confirmed, unspent outputs at the escrow address. The release PSBT must spend exactly these. |
@@ -141,7 +141,7 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 
 ### `elektron_escrow_item`
 
-Optional seller data per listing: `fk_i_item_id`, `seller_pubkey`, `payout_address`. Copied into a deal when it is created, so later edits never touch a running deal.
+Optional seller data per listing: `fk_i_item_id`, `seller_pubkey`, `seller_exit_pubkey`, `payout_address`. Copied into a deal when it is created, so later edits never touch a running deal.
 
 ### `elektron_escrow_deal_event`
 
@@ -198,7 +198,7 @@ The site is a relay and a passive display: it never holds a key, builds a transa
 
 | Status | Acts | Step |
 |---|---|---|
-| `awaiting_keys` | whoever has no key yet | Submits a public key, in any order. A key from the listing and one from checkout count. With both keys the escrow script, address and both dates are fixed. |
+| `awaiting_keys` | whoever has no keys yet | Submits the two public keys (main and exit), in any order. Keys from the listing and from checkout count. With both keys the escrow script, address and both dates are fixed. |
 | `awaiting_payment` | buyer | Pays the escrow address. The watcher detects it. |
 | `confirming` | chain | The watcher waits for the configured confirmations. |
 | `funded` | seller | Confirms shipping. The confirmed outputs are stored. |

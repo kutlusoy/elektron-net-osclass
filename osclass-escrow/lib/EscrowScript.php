@@ -10,11 +10,14 @@ use InvalidArgumentException;
  * build and sign it on its own:
  *
  *   or_d(multi(2,K1,K2),
- *        or_i(and_v(v:pk(BUYER),after(T1)), and_v(v:pk(SELLER),after(T2))))
+ *        or_i(and_v(v:pk(BUYER_EXIT),after(T1)),
+ *             and_v(v:pk(SELLER_EXIT),after(T2))))
  *
- * Both parties together can always spend. After T1 the buyer alone can
- * reclaim, after T2 the seller alone can claim. K1 and K2 are the two
- * keys in lexicographic order.
+ * Both parties together (their main keys, K1 and K2 in lexicographic order)
+ * can always spend. After T1 the buyer alone can reclaim with the exit key,
+ * after T2 the seller alone can claim with theirs. Miniscript forbids the
+ * same key twice in one script, which is why each party has a main key and
+ * a separate exit key.
  */
 final class EscrowScript
 {
@@ -34,26 +37,26 @@ final class EscrowScript
     {
     }
 
-    public static function witnessScriptHex(string $sellerKey, string $buyerKey, int $refundLocktime, int $claimLocktime): string
+    public static function witnessScriptHex(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime): string
     {
-        $sellerKey = strtolower($sellerKey);
-        $buyerKey = strtolower($buyerKey);
-        foreach ([$sellerKey, $buyerKey] as $key) {
+        $keys = array_map('strtolower', [$sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey]);
+        foreach ($keys as $key) {
             if (!PubKey::isValidCompressed($key)) {
                 throw new InvalidArgumentException('Not a valid compressed public key.');
             }
         }
-        if ($sellerKey === $buyerKey) {
-            throw new InvalidArgumentException('Both parties must use different public keys.');
+        if (count(array_unique($keys)) !== 4) {
+            throw new InvalidArgumentException('All four public keys must be different.');
         }
+        [$sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey] = $keys;
         self::assertLocktimes($refundLocktime, $claimLocktime);
 
         [$low, $high] = self::sortedKeys($sellerKey, $buyerKey);
 
         return self::OP_2 . '21' . $low . '21' . $high . self::OP_2 . self::OP_CHECKMULTISIG
             . self::OP_IFDUP . self::OP_NOTIF
-            . self::OP_IF . '21' . $buyerKey . self::OP_CHECKSIGVERIFY . self::pushNumber($refundLocktime) . self::OP_CLTV
-            . self::OP_ELSE . '21' . $sellerKey . self::OP_CHECKSIGVERIFY . self::pushNumber($claimLocktime) . self::OP_CLTV
+            . self::OP_IF . '21' . $buyerExitKey . self::OP_CHECKSIGVERIFY . self::pushNumber($refundLocktime) . self::OP_CLTV
+            . self::OP_ELSE . '21' . $sellerExitKey . self::OP_CHECKSIGVERIFY . self::pushNumber($claimLocktime) . self::OP_CLTV
             . self::OP_ENDIF . self::OP_ENDIF;
     }
 

@@ -62,9 +62,9 @@ final class DealWorkflow
 
         switch ($action) {
             case 'seller_submit_key':
-                return $this->sellerSubmitKey($deal, $get('pubkey'), $now);
+                return $this->submitKeys($deal, 'seller', $get('pubkey'), $get('exit_pubkey'), $now);
             case 'buyer_submit_key':
-                return $this->buyerSubmitKey($deal, $get('pubkey'), $now);
+                return $this->submitKeys($deal, 'buyer', $get('pubkey'), $get('exit_pubkey'), $now);
             case 'seller_mark_shipped':
                 return $this->advance($deal, DealStatus::FUNDED, DealStatus::SHIPPED);
             case 'buyer_mark_received':
@@ -107,73 +107,87 @@ final class DealWorkflow
     }
 
     /**
-     * Fields for a new deal. A key given up front (the seller's from the
-     * listing, the buyer's from checkout) is checked and stored; with both
-     * keys present the escrow is fixed right away.
+     * Fields for a new deal. Keys given up front (the seller's from the
+     * listing, the buyer's from checkout) are checked and stored; with both
+     * parties' keys present the escrow is fixed right away.
      *
      * @return array<string,mixed>
      */
-    public function create(?string $sellerKey, ?string $buyerKey, int $now): array
+    public function create(?string $sellerKey, ?string $sellerExitKey, ?string $buyerKey, ?string $buyerExitKey, int $now): array
     {
-        $deal = ['status' => DealStatus::AWAITING_KEYS, 'seller_pubkey' => null, 'buyer_pubkey' => null];
-        if ($sellerKey !== null && $sellerKey !== '') {
-            $deal['seller_pubkey'] = $this->cleanPubKey($sellerKey);
-        }
-        if ($buyerKey !== null && $buyerKey !== '') {
-            $deal['buyer_pubkey'] = $this->cleanPubKey($buyerKey);
+        $deal = ['status' => DealStatus::AWAITING_KEYS];
+        foreach (['seller' => [$sellerKey, $sellerExitKey], 'buyer' => [$buyerKey, $buyerExitKey]] as $role => [$main, $exit]) {
+            if (($main === null || $main === '') && ($exit === null || $exit === '')) {
+                continue;
+            }
+            $deal = array_merge($deal, $this->cleanKeyPair($role, (string) $main, (string) $exit));
         }
 
         return $this->fixEscrowIfComplete($deal, $now);
     }
 
-    private function sellerSubmitKey(array $deal, string $pubKeyHex, int $now): array
+    private function submitKeys(array $deal, string $role, string $mainKey, string $exitKey, int $now): array
     {
         $this->expect($deal, DealStatus::AWAITING_KEYS);
-        if (!empty($deal['seller_pubkey'])) {
+        if (!empty($deal[$role . '_pubkey'])) {
             throw new DealException('This step is not available at the moment.');
         }
-        $deal['seller_pubkey'] = $this->cleanPubKey($pubKeyHex);
 
-        return $this->fixEscrowIfComplete($deal, $now);
-    }
-
-    private function buyerSubmitKey(array $deal, string $pubKeyHex, int $now): array
-    {
-        $this->expect($deal, DealStatus::AWAITING_KEYS);
-        if (!empty($deal['buyer_pubkey'])) {
-            throw new DealException('This step is not available at the moment.');
-        }
-        $deal['buyer_pubkey'] = $this->cleanPubKey($pubKeyHex);
-
-        return $this->fixEscrowIfComplete($deal, $now);
+        return $this->fixEscrowIfComplete(array_merge($deal, $this->cleanKeyPair($role, $mainKey, $exitKey)), $now);
     }
 
     /**
-     * With both keys known, fixes the escrow: script, address and both
-     * dates are set and never change afterwards.
+     * @return array<string,string>
+     */
+    private function cleanKeyPair(string $role, string $mainKey, string $exitKey): array
+    {
+        if ($mainKey === '' || $exitKey === '') {
+            throw new DealException('Please give both public keys: the main key and the exit key.');
+        }
+        $main = $this->cleanPubKey($mainKey);
+        $exit = $this->cleanPubKey($exitKey);
+        if ($main === $exit) {
+            throw new DealException('The main key and the exit key must be different keys.');
+        }
+
+        return [$role . '_pubkey' => $main, $role . '_exit_pubkey' => $exit];
+    }
+
+    /**
+     * With both parties' keys known, fixes the escrow: script, address and
+     * both dates are set and never change afterwards.
      *
      * @return array<string,mixed> the key fields plus, when complete, the escrow fields and the next status
      */
     private function fixEscrowIfComplete(array $deal, int $now): array
     {
+        $columns = ['seller_pubkey', 'seller_exit_pubkey', 'buyer_pubkey', 'buyer_exit_pubkey'];
         $fields = ['status' => DealStatus::AWAITING_KEYS];
-        foreach (['seller_pubkey', 'buyer_pubkey'] as $column) {
+        foreach ($columns as $column) {
             if (!empty($deal[$column])) {
                 $fields[$column] = $deal[$column];
             }
         }
-        if (empty($deal['seller_pubkey']) || empty($deal['buyer_pubkey'])) {
-            return $fields;
+        foreach ($columns as $column) {
+            if (empty($deal[$column])) {
+                return $fields;
+            }
         }
 
         $refundLocktime = $this->timeouts->buyerRefundLocktime($now);
         $claimLocktime = $this->timeouts->sellerReleaseLocktime($now);
         try {
-            $witnessScript = EscrowScript::witnessScriptHex($deal['seller_pubkey'], $deal['buyer_pubkey'], $refundLocktime, $claimLocktime);
+            $witnessScript = EscrowScript::witnessScriptHex(
+                $deal['seller_pubkey'],
+                $deal['seller_exit_pubkey'],
+                $deal['buyer_pubkey'],
+                $deal['buyer_exit_pubkey'],
+                $refundLocktime,
+                $claimLocktime
+            );
         } catch (InvalidArgumentException $e) {
-            throw new DealException('Buyer and seller must use different keys.');
+            throw new DealException('All four public keys must be different. Buyer and seller must not share a key.');
         }
-
         $fields['status'] = DealStatus::AWAITING_PAYMENT;
 
         return $fields + [

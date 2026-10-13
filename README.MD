@@ -19,9 +19,11 @@ On-chain payments are irreversible, so a plain gateway that forwards funds from 
 
 The escrow is a single P2WSH miniscript, so every spending path is enforced on chain and a wallet that understands descriptors can build and sign it on its own:
 
-- both parties together can always spend,
-- after the refund date (T1) the buyer alone can reclaim,
-- after the claim date (T2) the seller alone can claim.
+- both parties together (their main keys) can always spend,
+- after the refund date (T1) the buyer alone can reclaim, with the buyer's exit key,
+- after the claim date (T2) the seller alone can claim, with the seller's exit key.
+
+Each party therefore gives two different public keys. A miniscript script may not contain the same key twice, so the exit paths need their own keys.
 
 No pre-signed transactions and no data from the marketplace are needed for the exits. Each party creates the transaction in their own wallet when it is needed.
 
@@ -29,9 +31,9 @@ No pre-signed transactions and no data from the marketplace are needed for the e
 
 Every step can only be taken by the party it belongs to. The deal page names the next step and explains each term with a "?" helper and a "How do I get this?" block for keys and addresses (node wallet, Electrum, other wallets).
 
-1. **Listing (optional).** The seller can enter a public key and a payout address when creating the listing. That skips the seller's key step later.
-2. **Order placed.** The buyer starts the escrow purchase, enters shipping details and optionally a public key.
-3. **Keys.** Whoever has not given a public key yet submits one, in any order. With both keys the escrow address, its descriptor and both dates are fixed.
+1. **Listing (optional).** The seller can enter two public keys (a main key and an exit key) and a payout address when creating the listing. That skips the seller's key step later.
+2. **Order placed.** The buyer starts the escrow purchase, enters shipping details and optionally their two public keys.
+3. **Keys.** Whoever has not given their two public keys yet submits them, in any order. With both keys the escrow address, its descriptor and both dates are fixed.
 4. **Payment.** The buyer checks the address in their own wallet (recommended) and pays it. A chain watcher and the deal page detect the payment and the confirmations.
 5. **Delivery.** The seller confirms shipping, the buyer confirms receipt. The seller ships only once their own wallet shows the confirmed payment.
 6. **Release.** The seller creates the release transaction in their wallet, paying themselves, signs it and pastes it into the deal page, which checks that it spends exactly the escrow payment, pays the stated address and carries only the seller's signature. The buyer checks it in their wallet, adds the second signature, broadcasts it and reports the transaction id.

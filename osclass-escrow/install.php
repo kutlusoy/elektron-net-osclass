@@ -33,7 +33,9 @@ function elektron_escrow_create_deal_tables()
             buyer_shipping_phone VARCHAR(40) NOT NULL,
             buyer_contact_email VARCHAR(190) NOT NULL,
             seller_pubkey VARCHAR(66) NULL,
+            seller_exit_pubkey VARCHAR(66) NULL,
             buyer_pubkey VARCHAR(66) NULL,
+            buyer_exit_pubkey VARCHAR(66) NULL,
             escrow_address VARCHAR(100) NULL,
             witness_script_hex TEXT NULL,
             buyer_refund_locktime INT(10) UNSIGNED NULL,
@@ -56,6 +58,7 @@ function elektron_escrow_create_deal_tables()
         'CREATE TABLE IF NOT EXISTS ' . DB_TABLE_PREFIX . 'elektron_escrow_item (
             fk_i_item_id INT(10) UNSIGNED NOT NULL,
             seller_pubkey VARCHAR(66) NULL,
+            seller_exit_pubkey VARCHAR(66) NULL,
             payout_address VARCHAR(100) NULL,
             PRIMARY KEY (fk_i_item_id)
         ) ENGINE=InnoDB DEFAULT CHARACTER SET \'UTF8\' COLLATE \'UTF8_GENERAL_CI\''

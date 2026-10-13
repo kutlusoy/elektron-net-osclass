@@ -67,11 +67,16 @@ elektron_escrow_table_style();
         <input type="email" name="contact_email" id="contact_email" required maxlength="190" size="40"
                value="<?php echo osc_esc_html((string) (Params::getParam('contact_email') ?: $buyerEmail)); ?>" />
 
-        <h2><?php _e('Your public key (optional)', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('buyer_key_optional'); ?></h2>
+        <h2><?php _e('Your public keys (optional)', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('buyer_key_optional'); ?></h2>
         <p>
-            <label for="buyer_pubkey"><?php _e('Your public key', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('pubkey'); ?><br />
+            <label for="buyer_pubkey"><?php _e('Your main public key', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('pubkey'); ?><br />
             <input type="text" name="buyer_pubkey" id="buyer_pubkey" size="70" maxlength="66" autocomplete="off" placeholder="02..."
                    value="<?php echo osc_esc_html((string) Params::getParam('buyer_pubkey')); ?>" />
+        </p>
+        <p>
+            <label for="buyer_exit_pubkey"><?php _e('Your exit public key', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('exit_pubkey'); ?><br />
+            <input type="text" name="buyer_exit_pubkey" id="buyer_exit_pubkey" size="70" maxlength="66" autocomplete="off" placeholder="03..."
+                   value="<?php echo osc_esc_html((string) Params::getParam('buyer_exit_pubkey')); ?>" />
         </p>
         <?php echo elektron_escrow_howto('pubkey'); ?>
         <input type="submit" class="btn btn-primary" value="<?php echo osc_esc_html(__('Confirm and start the escrow', ELEKTRON_ESCROW_DOMAIN)); ?>" />

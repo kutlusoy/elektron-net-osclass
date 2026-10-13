@@ -17,6 +17,7 @@ use ElektronNet\Escrow\RawTransaction;
 $G = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 $G2 = '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5';
 $G3 = '02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9';
+$G4 = '02e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13';
 $mainnet = NetworkParams::forNetwork('mainnet');
 $testnet = NetworkParams::forNetwork('testnet');
 
@@ -37,33 +38,38 @@ check('generator point is valid', PubKey::isValidCompressed($G));
 check('off-curve x is invalid', !PubKey::isValidCompressed('02' . str_repeat('00', 31) . '05'));
 check('uncompressed is invalid', !PubKey::isValidCompressed('04' . str_repeat('11', 64)));
 
-// Escrow script, vector compiled independently with embit from
-// wsh(or_d(multi(2,G,G2),or_i(and_v(v:pk(G2),after(1794431976)),and_v(v:pk(G),after(1799615976)))))
+// Escrow script with seller main/exit key G/2G and buyer main/exit key 3G/4G. Vector compiled
+// independently with embit from
+// wsh(or_d(multi(2,G,3G),or_i(and_v(v:pk(4G),after(1794431976)),and_v(v:pk(2G),after(1799615976)))))
 $T1 = 1794431976;
 $T2 = 1799615976;
-$script = EscrowScript::witnessScriptHex($G, $G2, $T1, $T2);
-check('script matches miniscript compiler', $script === '52210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817982102c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee552ae7364632102c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5ad04e8dbf46ab167210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ad04e8f5436bb16868');
-check('script pubkey matches', EscrowScript::scriptPubKeyHex($script) === '0020ac5cb3823c35a541d1be2eb7a724c8c27a895985c519e14d8b8e041e1c4ba43c');
-check('multi keys are sorted for either role', EscrowScript::sortedKeys($G2, $G) === [$G, $G2]);
-check('swapping roles changes the script', EscrowScript::witnessScriptHex($G2, $G, $T1, $T2) !== $script);
-check('rejects equal keys', throws(function () use ($G, $T1, $T2) { EscrowScript::witnessScriptHex($G, $G, $T1, $T2); }));
-check('rejects invalid key', throws(function () use ($G, $T1, $T2) { EscrowScript::witnessScriptHex($G, '02' . str_repeat('00', 31) . '05', $T1, $T2); }));
-check('rejects refund after claim', throws(function () use ($G, $G2, $T1, $T2) { EscrowScript::witnessScriptHex($G, $G2, $T2, $T1); }));
-check('rejects block-height locktime', throws(function () use ($G, $G2, $T2) { EscrowScript::witnessScriptHex($G, $G2, 800000, $T2); }));
+$script = EscrowScript::witnessScriptHex($G, $G2, $G3, $G4, $T1, $T2);
+check('script matches miniscript compiler', $script === '52210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817982102f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f952ae7364632102e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13ad04e8dbf46ab1672102c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5ad04e8f5436bb16868');
+check('script pubkey matches', EscrowScript::scriptPubKeyHex($script) === '00202bf9dfdd4c6ed19c70d3fb942f4a1fda52f42cfe2da34c37c707ffff91bdc453');
+check('multi keys are sorted', EscrowScript::sortedKeys($G3, $G) === [$G, $G3]);
+check('swapping roles changes the script', EscrowScript::witnessScriptHex($G3, $G4, $G, $G2, $T1, $T2) !== $script);
+check('rejects a repeated key', throws(function () use ($G, $G2, $G3, $T1, $T2) { EscrowScript::witnessScriptHex($G, $G2, $G3, $G, $T1, $T2); }));
+check('rejects the same key as main and exit', throws(function () use ($G, $G3, $G4, $T1, $T2) { EscrowScript::witnessScriptHex($G, $G, $G3, $G4, $T1, $T2); }));
+check('rejects invalid key', throws(function () use ($G, $G2, $G3, $T1, $T2) { EscrowScript::witnessScriptHex($G, $G2, $G3, '02' . str_repeat('00', 31) . '05', $T1, $T2); }));
+check('rejects refund after claim', throws(function () use ($G, $G2, $G3, $G4, $T1, $T2) { EscrowScript::witnessScriptHex($G, $G2, $G3, $G4, $T2, $T1); }));
+check('rejects block-height locktime', throws(function () use ($G, $G2, $G3, $G4, $T2) { EscrowScript::witnessScriptHex($G, $G2, $G3, $G4, 800000, $T2); }));
 $escrowAddress = EscrowScript::address($script, $testnet);
 check('address matches script pubkey', Address::toScriptPubKeyHex($escrowAddress, $testnet) === EscrowScript::scriptPubKeyHex($script));
 
 // Descriptor
 check('descriptor checksum vector', Descriptor::checksum("pkh([d34db33f/44'/0'/0']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1/*)") === 'ml40v0wf');
-check('escrow descriptor body', Descriptor::escrowBody($G, $G2, $T1, $T2) === "wsh(or_d(multi(2,{$G},{$G2}),or_i(and_v(v:pk({$G2}),after({$T1})),and_v(v:pk({$G}),after({$T2})))))");
-check('descriptor has checksum', preg_match('/#[a-z0-9]{8}$/', Descriptor::escrow($G, $G2, $T1, $T2)) === 1);
-$template = Descriptor::escrowBody($G, $G2, $T1, $T2, $G, '<KEY>');
-check('own key replaced everywhere', substr_count($template, '<KEY>') === 2 && strpos($template, $G) === false && strpos($template, $G2) !== false);
+check('escrow descriptor body', Descriptor::escrowBody($G, $G2, $G3, $G4, $T1, $T2) === "wsh(or_d(multi(2,{$G},{$G3}),or_i(and_v(v:pk({$G4}),after({$T1})),and_v(v:pk({$G2}),after({$T2})))))");
+check('descriptor has checksum', preg_match('/#[a-z0-9]{8}$/', Descriptor::escrow($G, $G2, $G3, $G4, $T1, $T2)) === 1);
+$body = Descriptor::escrowBody($G, $G2, $G3, $G4, $T1, $T2);
+preg_match_all('/0[23][0-9a-f]{64}/', $body, $found);
+check('no public key appears twice', count($found[0]) === 4 && count(array_unique($found[0])) === 4);
+$template = Descriptor::escrowBody($G, $G2, $G3, $G4, $T1, $T2, [$G => '<KEY_1>', $G2 => '<KEY_2>']);
+check('own keys replaced', substr_count($template, '<KEY_1>') === 1 && substr_count($template, '<KEY_2>') === 1 && strpos($template, $G) === false && strpos($template, $G3) !== false);
 
 // Release PSBT checks
 $payout = Address::toScriptPubKeyHex('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', $testnet);
 $funding = [['txid' => str_repeat('ab', 32), 'vout' => 1, 'amountLep' => 1000000]];
-$expected = ['witnessScriptHex' => $script, 'fundingOutputs' => $funding, 'payoutScriptPubKeyHex' => $payout, 'allowedPubKeys' => [$G, $G2], 'signerPubKey' => $G];
+$expected = ['witnessScriptHex' => $script, 'fundingOutputs' => $funding, 'payoutScriptPubKeyHex' => $payout, 'allowedPubKeys' => [$G, $G3], 'signerPubKey' => $G];
 $psbt = makePsbt($script, $funding, $payout, 998600);
 check('psbt round trip', Psbt::parse($psbt->toBase64())->toBase64() === $psbt->toBase64());
 check('psbt hex accepted', Psbt::parse(bin2hex($psbt->toBinary()))->toBase64() === $psbt->toBase64());
@@ -75,9 +81,9 @@ check('inspect fee and output', $report['feeLep'] === 1400 && $report['outputs']
 $good = withSignature($psbt, $G);
 check('valid release accepted', PsbtVerifier::assertReleasePsbt($good, $expected) === ['feeLep' => 1400, 'outputAmountLep' => 998600]);
 check('unsigned rejected', throws(function () use ($psbt, $expected) { PsbtVerifier::assertReleasePsbt($psbt, $expected); }, RuntimeException::class));
-check('other party signature rejected', throws(function () use ($psbt, $expected, $G2) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G2), $expected); }, RuntimeException::class));
-check('both signatures rejected for the seller upload', throws(function () use ($good, $expected, $G2) { PsbtVerifier::assertReleasePsbt(withSignature($good, $G2), $expected); }, RuntimeException::class));
-check('foreign key rejected', throws(function () use ($psbt, $expected, $G3) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G3), $expected); }, RuntimeException::class));
+check('other party signature rejected', throws(function () use ($psbt, $expected, $G3) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G3), $expected); }, RuntimeException::class));
+check('both signatures rejected for the seller upload', throws(function () use ($good, $expected, $G3) { PsbtVerifier::assertReleasePsbt(withSignature($good, $G3), $expected); }, RuntimeException::class));
+check('exit key signature rejected', throws(function () use ($psbt, $expected, $G2) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G2), $expected); }, RuntimeException::class));
 check('bad sighash rejected', throws(function () use ($psbt, $expected, $G) { PsbtVerifier::assertReleasePsbt(withSignature($psbt, $G, "\x30\x06\x02\x01\x01\x02\x01\x01\x02"), $expected); }, RuntimeException::class));
 check('wrong payout rejected', throws(function () use ($script, $funding, $expected, $G, $testnet) {
     $other = Address::toScriptPubKeyHex('tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7', $testnet);
@@ -93,8 +99,8 @@ check('missing input rejected', throws(function () use ($script, $expected, $G, 
 }, RuntimeException::class));
 check('excessive fee rejected', throws(function () use ($script, $funding, $expected, $G, $payout) { PsbtVerifier::assertReleasePsbt(withSignature(makePsbt($script, $funding, $payout, 100000), $G), $expected); }, RuntimeException::class));
 check('timestamp locktime rejected', throws(function () use ($script, $funding, $expected, $G, $payout, $T1) { PsbtVerifier::assertReleasePsbt(withSignature(makePsbt($script, $funding, $payout, 998600, $T1), $G), $expected); }, RuntimeException::class));
-check('wrong witness script rejected', throws(function () use ($script, $funding, $expected, $G, $G3, $payout, $T1, $T2) {
-    PsbtVerifier::assertReleasePsbt(withSignature(makePsbt(EscrowScript::witnessScriptHex($G, $G3, $T1, $T2), $funding, $payout, 998600), $G), $expected);
+check('wrong witness script rejected', throws(function () use ($script, $funding, $expected, $G, $G2, $G3, $G4, $payout, $T1, $T2) {
+    PsbtVerifier::assertReleasePsbt(withSignature(makePsbt(EscrowScript::witnessScriptHex($G, $G2, $G4, $G3, $T1, $T2), $funding, $payout, 998600), $G), $expected);
 }, RuntimeException::class));
 
 // Raw transaction parsing

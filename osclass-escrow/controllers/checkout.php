@@ -95,7 +95,13 @@ if (Params::getParam('confirm_checkout') === '1') {
 
     $itemData = EscrowItemDAO::newInstance()->forItem($itemId);
     try {
-        $keyFields = elektron_escrow_workflow()->create($itemData['seller_pubkey'], trim((string) Params::getParam('buyer_pubkey')), time());
+        $keyFields = elektron_escrow_workflow()->create(
+            $itemData['seller_pubkey'],
+            $itemData['seller_exit_pubkey'],
+            trim((string) Params::getParam('buyer_pubkey')),
+            trim((string) Params::getParam('buyer_exit_pubkey')),
+            time()
+        );
     } catch (DealException $e) {
         $errorMessage = __($e->getMessage(), ELEKTRON_ESCROW_DOMAIN);
         $timeoutPolicy = $config->timeoutPolicy();

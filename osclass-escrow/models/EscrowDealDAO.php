@@ -28,7 +28,7 @@ class EscrowDealDAO extends DAO
         $this->setFields([
             'pk_i_id', 'fk_i_item_id', 'fk_i_buyer_id', 'fk_i_seller_id', 'amount_lep', 'status',
             'buyer_shipping_name', 'buyer_shipping_address', 'buyer_shipping_phone', 'buyer_contact_email',
-            'seller_pubkey', 'buyer_pubkey', 'escrow_address', 'witness_script_hex',
+            'seller_pubkey', 'seller_exit_pubkey', 'buyer_pubkey', 'buyer_exit_pubkey', 'escrow_address', 'witness_script_hex',
             'buyer_refund_locktime', 'seller_release_locktime', 'funding_outputs',
             'seller_payout_address', 'release_psbt_signed', 'closing_txid',
             'dt_pub_date', 'dt_mod_date',

@@ -26,7 +26,7 @@ $funding = elektron_escrow_deal_funding_list($deal);
 $fundingTotalLep = array_sum(array_column($funding, 'amountLep'));
 $fundingTotalElek = elektron_escrow_plain_amount($fundingTotalLep / 100000000);
 $ownKey = $isBuyer ? $deal['buyer_pubkey'] : $deal['seller_pubkey'];
-$otherKey = $isBuyer ? $deal['seller_pubkey'] : $deal['buyer_pubkey'];
+$ownExitKey = $isBuyer ? $deal['buyer_exit_pubkey'] : $deal['seller_exit_pubkey'];
 
 $path = [
     DealStatus::AWAITING_KEYS,
@@ -38,8 +38,11 @@ $position = array_search($status, $path, true);
 $publicDescriptor = null;
 $descriptorTemplate = null;
 if ($deal['witness_script_hex'] !== null) {
-    $publicDescriptor = Descriptor::escrow($deal['seller_pubkey'], $deal['buyer_pubkey'], $t1, $t2);
-    $descriptorTemplate = Descriptor::escrowBody($deal['seller_pubkey'], $deal['buyer_pubkey'], $t1, $t2, $ownKey, '<YOUR_PRIVATE_KEY>');
+    $publicDescriptor = Descriptor::escrow($deal['seller_pubkey'], $deal['seller_exit_pubkey'], $deal['buyer_pubkey'], $deal['buyer_exit_pubkey'], $t1, $t2);
+    $descriptorTemplate = Descriptor::escrowBody($deal['seller_pubkey'], $deal['seller_exit_pubkey'], $deal['buyer_pubkey'], $deal['buyer_exit_pubkey'], $t1, $t2, [
+        $ownKey => '<YOUR_PRIVATE_KEY_1>',
+        $ownExitKey => '<YOUR_PRIVATE_KEY_2>',
+    ]);
 }
 
 $showShipping = !$isBuyer && in_array($status, [
@@ -67,6 +70,7 @@ $createCommand = function (string $address, int $locktime, ?int $sequence) use (
 $help = 'elektron_escrow_help';
 $consoleHelp = function (string $title, array $lines) use ($help): void {
     echo '<details><summary>' . osc_esc_html($title) . $help('console') . '</summary>';
+    echo elektron_escrow_where_console();
     foreach ($lines as $line) {
         echo '<p>' . $line . '</p>';
     }
@@ -165,9 +169,9 @@ elektron_escrow_table_style();
         <details class="elektron-escrow-panel">
             <summary><strong><?php _e('Check the address and prepare your wallet (recommended before you pay or ship)', ELEKTRON_ESCROW_DOMAIN); ?></strong><?php echo $help('check_address'); ?></summary>
             <?php echo $why(__('Why: your wallet calculates the address on its own, so you do not have to trust this page. Preparing it now means you can sign later without delay.', ELEKTRON_ESCROW_DOMAIN)); ?>
-            <?php $consoleHelp(__('Node wallet console', ELEKTRON_ESCROW_DOMAIN), [
-                '<strong>' . osc_esc_html(__('1. Check the address', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('This must print exactly the escrow address shown above:', ELEKTRON_ESCROW_DOMAIN)) . $code('deriveaddresses "' . $publicDescriptor . '"'),
-                '<strong>' . osc_esc_html(__('2. Prepare signing', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('private_key') . '<br />' . osc_esc_html(__('Replace <YOUR_PRIVATE_KEY> everywhere by the private key that belongs to your public key (a WIF key, or a key from "listdescriptors true" written as [fingerprint/path]xprv.../0/N). Then add the checksum and import it into the wallet you sign with:', ELEKTRON_ESCROW_DOMAIN)) . $code('getdescriptorinfo "' . $descriptorTemplate . '"') . $code('importdescriptors \'[{"desc":"<descriptor from getdescriptorinfo>","timestamp":"now"}]\''),
+            <?php $consoleHelp(__('Commands for the node wallet console', ELEKTRON_ESCROW_DOMAIN), [
+                '<strong>' . osc_esc_html(__('1. Check the address', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('Copy the whole line below, including the quotation marks, paste it into the console and press Enter. It must print exactly the escrow address shown above:', ELEKTRON_ESCROW_DOMAIN)) . $code('deriveaddresses "' . $publicDescriptor . '"'),
+                '<strong>' . osc_esc_html(__('2. Prepare signing', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('private_key') . '<br />' . osc_esc_html(__('Replace <YOUR_PRIVATE_KEY_1> by the private key that belongs to your main public key and <YOUR_PRIVATE_KEY_2> by the one that belongs to your exit public key (WIF keys, or keys from "listdescriptors true" written as [fingerprint/path]xprv.../0/N). Then add the checksum and import it into the wallet you sign with:', ELEKTRON_ESCROW_DOMAIN)) . $code('getdescriptorinfo "' . $descriptorTemplate . '"') . $code('importdescriptors \'[{"desc":"<descriptor from getdescriptorinfo>","timestamp":"now"}]\''),
             ]); ?>
         </details>
     <?php } ?>
@@ -176,9 +180,10 @@ elektron_escrow_table_style();
         <div class="elektron-escrow-panel">
         <?php switch ($status) {
             case DealStatus::AWAITING_KEYS:
-                echo $why(__('Why: the escrow address is built from your public key and the other party\'s public key. A public key can be shared safely.', ELEKTRON_ESCROW_DOMAIN));
+                echo $why(__('Why: the escrow address is built from your two public keys and the other party\'s two public keys. Public keys can be shared safely.', ELEKTRON_ESCROW_DOMAIN));
                 elektron_escrow_action_form($deal, $isBuyer ? 'buyer_submit_key' : 'seller_submit_key', __('Submit', ELEKTRON_ESCROW_DOMAIN), [
-                    'pubkey' => ['label' => __('Your public key (66 characters)', ELEKTRON_ESCROW_DOMAIN), 'placeholder' => '02...', 'help' => 'pubkey'],
+                    'pubkey' => ['label' => __('Your main public key (66 characters)', ELEKTRON_ESCROW_DOMAIN), 'placeholder' => '02...', 'help' => 'pubkey'],
+                    'exit_pubkey' => ['label' => __('Your exit public key (66 characters, a different key)', ELEKTRON_ESCROW_DOMAIN), 'placeholder' => '03...', 'help' => 'exit_pubkey'],
                 ]);
                 echo elektron_escrow_howto('pubkey');
                 break;

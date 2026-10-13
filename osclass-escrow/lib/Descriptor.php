@@ -15,23 +15,27 @@ final class Descriptor
     }
 
     /**
-     * The escrow descriptor body (without checksum). With $ownKey and
-     * $placeholder set, every occurrence of $ownKey is replaced, which is the
-     * form a party completes with their private key before importing it.
+     * The escrow descriptor body (without checksum). $replace maps a public
+     * key to the text that replaces it, which is the form a party completes
+     * with their private keys before importing it.
+     *
+     * @param array<string,string> $replace
      */
-    public static function escrowBody(string $sellerKey, string $buyerKey, int $refundLocktime, int $claimLocktime, ?string $ownKey = null, string $placeholder = ''): string
+    public static function escrowBody(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime, array $replace = []): string
     {
         [$low, $high] = EscrowScript::sortedKeys($sellerKey, $buyerKey);
-        $seller = strtolower($sellerKey);
-        $buyer = strtolower($buyerKey);
-        $body = 'wsh(or_d(multi(2,' . $low . ',' . $high . '),or_i(and_v(v:pk(' . $buyer . '),after(' . $refundLocktime . ')),and_v(v:pk(' . $seller . '),after(' . $claimLocktime . ')))))';
+        $body = 'wsh(or_d(multi(2,' . $low . ',' . $high . '),or_i(and_v(v:pk(' . strtolower($buyerExitKey) . '),after(' . $refundLocktime . ')),and_v(v:pk(' . strtolower($sellerExitKey) . '),after(' . $claimLocktime . ')))))';
 
-        return $ownKey === null ? $body : str_replace(strtolower($ownKey), $placeholder, $body);
+        foreach ($replace as $key => $text) {
+            $body = str_replace(strtolower($key), $text, $body);
+        }
+
+        return $body;
     }
 
-    public static function escrow(string $sellerKey, string $buyerKey, int $refundLocktime, int $claimLocktime): string
+    public static function escrow(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime): string
     {
-        return self::withChecksum(self::escrowBody($sellerKey, $buyerKey, $refundLocktime, $claimLocktime));
+        return self::withChecksum(self::escrowBody($sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey, $refundLocktime, $claimLocktime));
     }
 
     public static function withChecksum(string $descriptor): string

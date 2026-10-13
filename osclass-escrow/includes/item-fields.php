@@ -5,8 +5,9 @@ use ElektronNet\Escrow\PubKey;
 
 function elektron_escrow_render_item_fields(?int $itemId): void
 {
-    $values = $itemId === null ? ['seller_pubkey' => null, 'payout_address' => null] : EscrowItemDAO::newInstance()->forItem($itemId);
+    $values = $itemId === null ? ['seller_pubkey' => null, 'seller_exit_pubkey' => null, 'payout_address' => null] : EscrowItemDAO::newInstance()->forItem($itemId);
     $pubKey = (string) $values['seller_pubkey'];
+    $exitPubKey = (string) $values['seller_exit_pubkey'];
     $payoutAddress = (string) $values['payout_address'];
     require osc_plugins_path() . 'osclass-escrow/views/item-fields.php';
 }
@@ -24,16 +25,19 @@ function elektron_escrow_save_item_fields($item): void
     }
 
     $pubKey = strtolower(trim((string) Params::getParam('elektron_escrow_pubkey')));
+    $exitPubKey = strtolower(trim((string) Params::getParam('elektron_escrow_exit_pubkey')));
     $address = trim((string) Params::getParam('elektron_escrow_payout_address'));
 
-    if ($pubKey !== '' && !PubKey::isValidCompressed($pubKey)) {
-        osc_add_flash_error_message(__('The Elektron public key was not saved: it must be 66 hex characters starting with 02 or 03.', ELEKTRON_ESCROW_DOMAIN));
+    $keysValid = PubKey::isValidCompressed($pubKey) && PubKey::isValidCompressed($exitPubKey) && $pubKey !== $exitPubKey;
+    if (($pubKey !== '' || $exitPubKey !== '') && !$keysValid) {
+        osc_add_flash_error_message(__('The Elektron public keys were not saved: give two different public keys of 66 hex characters each, starting with 02 or 03.', ELEKTRON_ESCROW_DOMAIN));
         $pubKey = '';
+        $exitPubKey = '';
     }
     if ($address !== '' && Address::toScriptPubKeyHex($address, elektron_escrow_network_params()) === null) {
         osc_add_flash_error_message(__('The Elektron payout address was not saved: it is not a valid address for this network.', ELEKTRON_ESCROW_DOMAIN));
         $address = '';
     }
 
-    EscrowItemDAO::newInstance()->saveForItem((int) $item['pk_i_id'], $pubKey, $address);
+    EscrowItemDAO::newInstance()->saveForItem((int) $item['pk_i_id'], $pubKey, $exitPubKey, $address);
 }

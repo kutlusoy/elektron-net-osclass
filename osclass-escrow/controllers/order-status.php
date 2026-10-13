@@ -53,7 +53,7 @@ if ($action !== '') {
             : __('Status updated from the chain.', ELEKTRON_ESCROW_DOMAIN);
     } else {
         $input = [];
-        foreach (['pubkey', 'address', 'psbt', 'txid'] as $field) {
+        foreach (['pubkey', 'exit_pubkey', 'address', 'psbt', 'txid'] as $field) {
             $input[$field] = (string) Params::getParam($field, false, false);
         }
         try {
