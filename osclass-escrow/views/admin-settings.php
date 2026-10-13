@@ -65,6 +65,49 @@
             ); ?>
         </p>
 
+        <h3><?php _e('Arbiter', ELEKTRON_ESCROW_DOMAIN); ?></h3>
+        <p class="description"><?php _e('With an arbiter, every new deal gets a third key and any two of the three can spend. In a dispute the arbiter decides together with the party in the right. The arbiter can never spend alone. The arbiter wallet is your own node wallet; its private key is never entered here.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+        <table class="table">
+            <tr>
+                <td><?php _e('Arbiter wallet', ELEKTRON_ESCROW_DOMAIN); ?></td>
+                <td>
+                    <?php if (elektron_escrow_arbiter_xpub() !== '') { ?>
+                        <strong><?php _e('Connected', ELEKTRON_ESCROW_DOMAIN); ?></strong>:
+                        <?php echo osc_esc_html((string) osc_get_preference('arbiter_wallet_name', 'plugin-osclass-escrow')); ?>
+                        (<code><?php echo osc_esc_html((string) osc_get_preference('arbiter_fingerprint', 'plugin-osclass-escrow')); ?></code>)
+                    <?php } else { ?>
+                        <?php _e('Not connected', ELEKTRON_ESCROW_DOMAIN); ?>
+                    <?php } ?>
+                </td>
+            </tr>
+            <tr>
+                <td><label for="arbiter_text"><?php _e('Connect or replace the arbiter wallet', ELEKTRON_ESCROW_DOMAIN); ?></label></td>
+                <td>
+                    <ol>
+                        <li><?php _e('In the node wallet open Window, then Console, and choose the wallet that acts as arbiter.', ELEKTRON_ESCROW_DOMAIN); ?></li>
+                        <li><?php _e('Run this command:', ELEKTRON_ESCROW_DOMAIN); ?> <code class="elektron-escrow-code">gethdkeys '{"active_only":true}'</code></li>
+                        <li><?php _e('Copy the whole result (from the first [ to the last ]) and paste it into the field below. It contains only public keys. A private key is refused.', ELEKTRON_ESCROW_DOMAIN); ?></li>
+                    </ol>
+                    <textarea name="arbiter_text" id="arbiter_text" rows="6" cols="60" spellcheck="false" autocomplete="off"></textarea>
+                    <p><label for="arbiter_wallet_name"><?php _e('Wallet name (as in the console dropdown, optional)', ELEKTRON_ESCROW_DOMAIN); ?></label><br />
+                        <input type="text" name="arbiter_wallet_name" id="arbiter_wallet_name" size="40" maxlength="100" value="<?php echo osc_esc_html((string) osc_get_preference('arbiter_wallet_name', 'plugin-osclass-escrow')); ?>" /></p>
+                </td>
+            </tr>
+            <tr>
+                <td><label for="arbiter_enabled"><?php _e('Use the arbiter for new deals', ELEKTRON_ESCROW_DOMAIN); ?></label></td>
+                <td><input type="checkbox" name="arbiter_enabled" id="arbiter_enabled" value="1" <?php echo osc_get_preference('arbiter_enabled', 'plugin-osclass-escrow') === '1' ? 'checked' : ''; ?> /> <?php _e('Running deals keep what they were created with.', ELEKTRON_ESCROW_DOMAIN); ?></td>
+            </tr>
+            <tr>
+                <td><label for="arbiter_buyer_refund_days"><?php _e('With arbiter: buyer refund threshold, T1 (days)', ELEKTRON_ESCROW_DOMAIN); ?></label></td>
+                <td><input type="number" min="1" name="arbiter_buyer_refund_days" id="arbiter_buyer_refund_days" value="<?php echo (int) (osc_get_preference('arbiter_buyer_refund_days', 'plugin-osclass-escrow') ?: 45); ?>" /></td>
+            </tr>
+            <tr>
+                <td><label for="arbiter_seller_release_days"><?php _e('With arbiter: seller release threshold, T2 (days)', ELEKTRON_ESCROW_DOMAIN); ?></label></td>
+                <td><input type="number" min="1" name="arbiter_seller_release_days" id="arbiter_seller_release_days" value="<?php echo (int) (osc_get_preference('arbiter_seller_release_days', 'plugin-osclass-escrow') ?: 90); ?>" /></td>
+            </tr>
+        </table>
+        <p class="description"><?php _e('Give the arbiter time: both dates should be well after the expected delivery and the time you need to decide a dispute.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+
         <input type="submit" class="btn btn-primary" value="<?php echo osc_esc_html(__('Save', ELEKTRON_ESCROW_DOMAIN)); ?>" />
     </form>
 </div>

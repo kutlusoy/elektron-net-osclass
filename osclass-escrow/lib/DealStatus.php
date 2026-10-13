@@ -14,6 +14,9 @@ final class DealStatus
     public const SHIPPED = 'shipped';
     public const AWAITING_SELLER_RELEASE = 'awaiting_seller_release';
     public const AWAITING_BUYER_RELEASE = 'awaiting_buyer_release';
+    public const DISPUTED = 'disputed';
+    public const RULED = 'ruled';
+    public const AWAITING_ARBITER_SIGNATURE = 'awaiting_arbiter_signature';
     public const RELEASED = 'released';
     public const REFUNDED = 'refunded';
     public const CLAIMED = 'claimed';
@@ -31,7 +34,13 @@ final class DealStatus
         self::SHIPPED,
         self::AWAITING_SELLER_RELEASE,
         self::AWAITING_BUYER_RELEASE,
+        self::DISPUTED,
+        self::RULED,
+        self::AWAITING_ARBITER_SIGNATURE,
     ];
+
+    /** Statuses in which either party may call the arbiter. */
+    public const DISPUTABLE = [self::FUNDED, self::SHIPPED, self::AWAITING_SELLER_RELEASE, self::AWAITING_BUYER_RELEASE];
 
     /** Statuses in which no payment can exist yet and the deal can be cancelled. */
     public const CANCELLABLE = [self::AWAITING_PAYMENT];
@@ -42,6 +51,8 @@ final class DealStatus
         self::SHIPPED => 'buyer',
         self::AWAITING_SELLER_RELEASE => 'seller',
         self::AWAITING_BUYER_RELEASE => 'buyer',
+        self::DISPUTED => 'arbiter',
+        self::AWAITING_ARBITER_SIGNATURE => 'arbiter',
     ];
 
     private function __construct()
@@ -53,11 +64,15 @@ final class DealStatus
      */
     public static function mayAct(array $deal, string $role): bool
     {
+        if ($deal['status'] === self::RULED) {
+            return $role === ($deal['ruling'] ?? null);
+        }
+
         return self::actor($deal['status']) === $role;
     }
 
     /**
-     * @return string|null 'buyer' or 'seller' for a status with one fixed actor, null while the chain is being waited on or once terminal
+     * @return string|null 'buyer', 'seller' or 'arbiter' for a status with one fixed actor, null while the chain is being waited on or once terminal
      */
     public static function actor(string $status): ?string
     {

@@ -45,6 +45,14 @@ function elektron_escrow_create_deal_tables()
             release_psbt_signed MEDIUMTEXT NULL,
             closing_txid VARCHAR(64) NULL,
             b_item_relisted TINYINT(1) NOT NULL DEFAULT 0,
+            arbiter_pubkey VARCHAR(66) NULL,
+            dispute_opened_by VARCHAR(10) NULL,
+            dispute_reason TEXT NULL,
+            dispute_opened_at DATETIME NULL,
+            ruling VARCHAR(10) NULL,
+            ruling_note TEXT NULL,
+            ruling_address VARCHAR(100) NULL,
+            ruling_psbt MEDIUMTEXT NULL,
             buyer_prepared_at DATETIME NULL,
             seller_prepared_at DATETIME NULL,
             dt_pub_date DATETIME NOT NULL,
@@ -96,6 +104,12 @@ function elektron_escrow_set_default_preferences()
         'required_confirmations' => '3',
         'buyer_refund_days' => (string) \ElektronNet\Escrow\TimeoutPolicy::DEFAULT_BUYER_REFUND_DAYS,
         'seller_release_days' => (string) \ElektronNet\Escrow\TimeoutPolicy::DEFAULT_SELLER_RELEASE_DAYS,
+        'arbiter_enabled' => '0',
+        'arbiter_xpub' => '',
+        'arbiter_fingerprint' => '',
+        'arbiter_wallet_name' => '',
+        'arbiter_buyer_refund_days' => '45',
+        'arbiter_seller_release_days' => '90',
         'network' => 'mainnet',
         // Osclass stores currency codes as CHAR(3), so "ELEK" cannot be one; see elektron_escrow_currency_codes().
         'currency_codes' => "ELE\nELK",
@@ -114,7 +128,7 @@ function elektron_escrow_set_default_preferences()
  */
 function elektron_escrow_ensure_schema()
 {
-    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '5') {
+    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '6') {
         return;
     }
     $dao = EscrowDealDAO::newInstance();
@@ -134,6 +148,14 @@ function elektron_escrow_ensure_schema()
         'release_psbt_signed' => 'MEDIUMTEXT NULL',
         'closing_txid' => 'VARCHAR(64) NULL',
         'b_item_relisted' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'arbiter_pubkey' => 'VARCHAR(66) NULL',
+        'dispute_opened_by' => 'VARCHAR(10) NULL',
+        'dispute_reason' => 'TEXT NULL',
+        'dispute_opened_at' => 'DATETIME NULL',
+        'ruling' => 'VARCHAR(10) NULL',
+        'ruling_note' => 'TEXT NULL',
+        'ruling_address' => 'VARCHAR(100) NULL',
+        'ruling_psbt' => 'MEDIUMTEXT NULL',
         'buyer_prepared_at' => 'DATETIME NULL',
         'seller_prepared_at' => 'DATETIME NULL',
         'dt_mod_date' => 'DATETIME NULL',
@@ -158,7 +180,7 @@ function elektron_escrow_ensure_schema()
     if (in_array('s_origin_path', $walletExisting, true)) {
         $dao->dao->query('ALTER TABLE ' . $walletTable . ' DROP COLUMN s_origin_path');
     }
-    Preference::newInstance()->replace('schema_version', '5', 'plugin-osclass-escrow', 'STRING');
+    Preference::newInstance()->replace('schema_version', '6', 'plugin-osclass-escrow', 'STRING');
 }
 
 function elektron_escrow_uninstall()

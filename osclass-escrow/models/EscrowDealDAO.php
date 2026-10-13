@@ -30,7 +30,7 @@ class EscrowDealDAO extends DAO
             'buyer_shipping_name', 'buyer_shipping_address', 'buyer_shipping_phone', 'buyer_contact_email',
             'seller_pubkey', 'seller_exit_pubkey', 'buyer_pubkey', 'buyer_exit_pubkey', 'escrow_address', 'witness_script_hex',
             'buyer_refund_locktime', 'seller_release_locktime', 'funding_outputs',
-            'seller_payout_address', 'release_psbt_signed', 'closing_txid', 'b_item_relisted', 'buyer_prepared_at', 'seller_prepared_at',
+            'seller_payout_address', 'release_psbt_signed', 'closing_txid', 'b_item_relisted', 'arbiter_pubkey', 'dispute_opened_by', 'dispute_reason', 'dispute_opened_at', 'ruling', 'ruling_note', 'ruling_address', 'ruling_psbt', 'buyer_prepared_at', 'seller_prepared_at',
             'dt_pub_date', 'dt_mod_date',
         ]);
     }
@@ -160,6 +160,22 @@ class EscrowDealDAO extends DAO
     public function findAwaitingChain(): array
     {
         return $this->findByStatuses([DealStatus::AWAITING_PAYMENT, DealStatus::CONFIRMING]);
+    }
+
+    /**
+     * Deals the arbiter has to look at, oldest first.
+     *
+     * @return array[]
+     */
+    public function findArbiterCases(): array
+    {
+        $this->dao->select();
+        $this->dao->from($this->getTableName());
+        $this->dao->whereIn('status', [DealStatus::DISPUTED, DealStatus::RULED, DealStatus::AWAITING_ARBITER_SIGNATURE]);
+        $this->dao->orderBy('pk_i_id', 'ASC');
+        $result = $this->dao->get();
+
+        return $result === false ? [] : $result->result();
     }
 
     /**

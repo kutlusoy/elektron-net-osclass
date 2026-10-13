@@ -11,6 +11,9 @@ function elektron_escrow_status_label(string $status): string
         DealStatus::SHIPPED => __('Shipped', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::AWAITING_SELLER_RELEASE => __('Waiting for seller release', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::AWAITING_BUYER_RELEASE => __('Waiting for buyer release', ELEKTRON_ESCROW_DOMAIN),
+        DealStatus::DISPUTED => __('Dispute: waiting for the arbiter', ELEKTRON_ESCROW_DOMAIN),
+        DealStatus::RULED => __('Arbiter has decided', ELEKTRON_ESCROW_DOMAIN),
+        DealStatus::AWAITING_ARBITER_SIGNATURE => __('Waiting for the arbiter to sign', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::RELEASED => __('Released', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::REFUNDED => __('Refunded', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::CLAIMED => __('Claimed by seller', ELEKTRON_ESCROW_DOMAIN),
@@ -43,6 +46,14 @@ function elektron_escrow_next_step(array $deal, string $role): string
             return $mine ? __('Create the release transaction in your wallet, sign it, and paste it below.', ELEKTRON_ESCROW_DOMAIN) : $waiting;
         case DealStatus::AWAITING_BUYER_RELEASE:
             return $mine ? __('Check the release transaction in your wallet, add your signature, broadcast it, and enter its transaction id.', ELEKTRON_ESCROW_DOMAIN) : $waiting;
+        case DealStatus::DISPUTED:
+            return __('A dispute was opened. The arbiter decides and will tell you. Nothing else is needed from you now.', ELEKTRON_ESCROW_DOMAIN);
+        case DealStatus::RULED:
+            return $mine
+                ? __('The arbiter decided in your favour. Create the transaction that pays you, sign it and submit it below. The arbiter then signs it too and sends it.', ELEKTRON_ESCROW_DOMAIN)
+                : __('The arbiter has decided. The party in the right now prepares the transaction. See the decision below.', ELEKTRON_ESCROW_DOMAIN);
+        case DealStatus::AWAITING_ARBITER_SIGNATURE:
+            return __('The transaction is ready. The arbiter signs it and sends it. Nothing else is needed from you.', ELEKTRON_ESCROW_DOMAIN);
         case DealStatus::RELEASED:
             return __('Completed: the funds were released to the seller.', ELEKTRON_ESCROW_DOMAIN);
         case DealStatus::REFUNDED:
@@ -70,6 +81,11 @@ function elektron_escrow_event_label(string $type): string
         'buyer_mark_refunded' => __('Buyer reports the refund was broadcast', ELEKTRON_ESCROW_DOMAIN),
         'seller_mark_claimed' => __('Seller reports the claim was broadcast', ELEKTRON_ESCROW_DOMAIN),
         'confirm_prepared' => __('Wallet prepared for this deal', ELEKTRON_ESCROW_DOMAIN),
+        'arbiter_message' => __('Message from the arbiter', ELEKTRON_ESCROW_DOMAIN),
+        'open_dispute' => __('Dispute opened, arbiter called', ELEKTRON_ESCROW_DOMAIN),
+        'arbiter_rule' => __('Arbiter decided', ELEKTRON_ESCROW_DOMAIN),
+        'winner_submit_psbt' => __('Party in the right submitted a signed transaction', ELEKTRON_ESCROW_DOMAIN),
+        'arbiter_complete' => __('Arbiter signed and sent the transaction', ELEKTRON_ESCROW_DOMAIN),
         'cancel' => __('Deal cancelled', ELEKTRON_ESCROW_DOMAIN),
         'message' => __('Message', ELEKTRON_ESCROW_DOMAIN),
     ];
@@ -104,6 +120,8 @@ function elektron_escrow_help_text(string $key): string
         'message' => __('A short note to the other party. This is the only chat between you, nothing here changes the deal.', ELEKTRON_ESCROW_DOMAIN),
         'verify' => __('This site only shows what the other party submitted. Always check the amounts and addresses in your own wallet before you sign.', ELEKTRON_ESCROW_DOMAIN),
         'console' => __('Commands you type into the console of your Elektron Net node wallet: menu Window, then Console. Choose your wallet in the dropdown at the top of the console. Paste a command including its quotation marks and press Enter. Replace the parts in angle brackets with your own values.', ELEKTRON_ESCROW_DOMAIN),
+        'emergency' => __('Things you rarely need: cancel the deal while nothing is paid, or call the arbiter if buyer and seller cannot agree.', ELEKTRON_ESCROW_DOMAIN),
+        'dispute' => __('The arbiter looks at the history and messages of this deal, decides who receives the money and signs together with that party. The arbiter can never take the money alone.', ELEKTRON_ESCROW_DOMAIN),
         'refund' => __('If the seller does not deliver, the buyer can take the money back alone after the refund date, with a transaction made in the buyer\'s own wallet.', ELEKTRON_ESCROW_DOMAIN),
         'claim' => __('If the buyer neither confirms nor refunds, the seller can take the money alone after the claim date, with a transaction made in the seller\'s own wallet.', ELEKTRON_ESCROW_DOMAIN),
     ];
@@ -165,4 +183,14 @@ function elektron_escrow_result_block(string $text): string
     $html = preg_replace('/&lt;(COPY_[A-Z0-9_]+)&gt;/', '<mark>&lt;$1&gt;</mark>', osc_esc_html($text));
 
     return '<p>' . osc_esc_html(__('The result looks like this. Copy only the highlighted part:', ELEKTRON_ESCROW_DOMAIN)) . '</p><pre class="elektron-escrow-code">' . $html . '</pre>';
+}
+
+/**
+ * One console step: title, what to do, the command and an example of its result.
+ */
+function elektron_escrow_cmd_step(string $title, string $text, string $command, ?string $resultText = null): string
+{
+    return '<strong>' . osc_esc_html($title) . '</strong><br />' . osc_esc_html($text)
+        . '<code class="elektron-escrow-code">' . osc_esc_html($command) . '</code>'
+        . ($resultText !== null ? elektron_escrow_result_block($resultText) : '');
 }

@@ -23,12 +23,24 @@ function elektron_escrow_keys_for(int $userId, int $dealId): ?array
  */
 function elektron_escrow_private_descriptor(array $deal, string $role): ?string
 {
-    $wallet = EscrowWalletDAO::newInstance()->forUser((int) $deal['fk_i_' . $role . '_id']);
-    if ($wallet === null || empty($deal['witness_script_hex'])) {
+    if (empty($deal['witness_script_hex'])) {
         return null;
     }
-    $keys = EscrowKeys::forDeal($wallet['s_xpub'], (int) $deal['pk_i_id'], elektron_escrow_network_params());
-    $prefix = '<PASTE_XPRV>/' . EscrowKeys::BRANCH . '/';
+    if ($role === 'arbiter') {
+        if (empty($deal['arbiter_pubkey']) || elektron_escrow_arbiter_xpub() === '') {
+            return null;
+        }
+        $keys = elektron_escrow_arbiter_keys((int) $deal['pk_i_id']);
+        $replace = [$keys['main'] => '<PASTE_XPRV>/' . EscrowKeys::BRANCH . '/' . $keys['mainIndex']];
+    } else {
+        $wallet = EscrowWalletDAO::newInstance()->forUser((int) $deal['fk_i_' . $role . '_id']);
+        if ($wallet === null) {
+            return null;
+        }
+        $keys = EscrowKeys::forDeal($wallet['s_xpub'], (int) $deal['pk_i_id'], elektron_escrow_network_params());
+        $prefix = '<PASTE_XPRV>/' . EscrowKeys::BRANCH . '/';
+        $replace = [$keys['main'] => $prefix . $keys['mainIndex'], $keys['exit'] => $prefix . $keys['exitIndex']];
+    }
 
     return Descriptor::escrowBody(
         $deal['seller_pubkey'],
@@ -37,6 +49,7 @@ function elektron_escrow_private_descriptor(array $deal, string $role): ?string
         $deal['buyer_exit_pubkey'],
         (int) $deal['buyer_refund_locktime'],
         (int) $deal['seller_release_locktime'],
-        [$keys['main'] => $prefix . $keys['mainIndex'], $keys['exit'] => $prefix . $keys['exitIndex']]
+        $replace,
+        $deal['arbiter_pubkey'] ?: null
     );
 }
