@@ -60,7 +60,7 @@ function elektron_escrow_create_deal_tables()
         'CREATE TABLE IF NOT EXISTS ' . DB_TABLE_PREFIX . 'elektron_escrow_wallet (
             fk_i_user_id INT(10) UNSIGNED NOT NULL,
             s_fingerprint CHAR(8) NOT NULL,
-            s_origin_path VARCHAR(60) NOT NULL,
+            s_wallet_name VARCHAR(100) NULL,
             s_xpub VARCHAR(120) NOT NULL,
             s_payout_address VARCHAR(100) NULL,
             dt_pub_date DATETIME NOT NULL,
@@ -113,7 +113,7 @@ function elektron_escrow_set_default_preferences()
  */
 function elektron_escrow_ensure_schema()
 {
-    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '3') {
+    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '4') {
         return;
     }
     $dao = EscrowDealDAO::newInstance();
@@ -147,7 +147,16 @@ function elektron_escrow_ensure_schema()
             $dao->dao->query('ALTER TABLE ' . $table . ' ADD COLUMN ' . $name . ' ' . $definition);
         }
     }
-    Preference::newInstance()->replace('schema_version', '3', 'plugin-osclass-escrow', 'STRING');
+    $walletTable = DB_TABLE_PREFIX . 'elektron_escrow_wallet';
+    $walletColumns = $dao->dao->query('SHOW COLUMNS FROM ' . $walletTable);
+    $walletExisting = $walletColumns ? array_column($walletColumns->result(), 'Field') : [];
+    if ($walletExisting !== [] && !in_array('s_wallet_name', $walletExisting, true)) {
+        $dao->dao->query('ALTER TABLE ' . $walletTable . ' ADD COLUMN s_wallet_name VARCHAR(100) NULL');
+    }
+    if (in_array('s_origin_path', $walletExisting, true)) {
+        $dao->dao->query('ALTER TABLE ' . $walletTable . ' DROP COLUMN s_origin_path');
+    }
+    Preference::newInstance()->replace('schema_version', '4', 'plugin-osclass-escrow', 'STRING');
 }
 
 function elektron_escrow_uninstall()

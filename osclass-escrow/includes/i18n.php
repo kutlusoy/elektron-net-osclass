@@ -86,6 +86,7 @@ function elektron_escrow_help_text(string $key): string
         'status' => __('Where this deal currently stands. Only the person named under "Next step" can act. The other side has to wait, so nobody can run ahead.', ELEKTRON_ESCROW_DOMAIN),
         'escrow' => __('A special payment address that needs a signature from both of you to release the money. Nobody else, including this website, can move the funds.', ELEKTRON_ESCROW_DOMAIN),
         'wallet_public' => __('The text you paste contains only public keys, comparable to account numbers. They let this site work out the keys for each deal. They cannot sign or spend. Text with a private key is refused.', ELEKTRON_ESCROW_DOMAIN),
+        'wallet_name' => __('The name of the wallet in your node software, shown in the wallet dropdown at the top of the console. It is only a reminder for you, so that you later choose the same wallet.', ELEKTRON_ESCROW_DOMAIN),
         'wallet_id' => __('A short id of your wallet, taken from the pasted text. Your wallet uses it to tell its keys apart.', ELEKTRON_ESCROW_DOMAIN),
         'pubkey' => __('A public key is like an account number for signatures. It is safe to share. The matching private key stays in your wallet and is never entered on this site.', ELEKTRON_ESCROW_DOMAIN),
         'private_key' => __('Your private key proves you own the funds. Never paste it into this website. It is only used locally in your own wallet.', ELEKTRON_ESCROW_DOMAIN),

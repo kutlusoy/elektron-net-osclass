@@ -31,13 +31,14 @@ if ($returnUrl !== '' && strpos($returnUrl, osc_base_url()) !== 0) {
 if (Params::getParam('wallet_action') === 'connect') {
     osc_csrf_check();
     $text = (string) Params::getParam('wallet_text', false, false);
+    $walletName = mb_substr(trim((string) Params::getParam('wallet_name', false, false)), 0, 100);
     $payout = trim((string) Params::getParam('payout_address', false, false));
     try {
         $connection = WalletConnection::parse($text, elektron_escrow_network_params());
         if ($payout !== '' && Address::toScriptPubKeyHex($payout, elektron_escrow_network_params()) === null) {
             throw new InvalidArgumentException('The payout address is not a valid address for this network.');
         }
-        $walletDao->saveForUser($userId, $connection['fingerprint'], $connection['originPath'], $connection['xpub'], $payout);
+        $walletDao->saveForUser($userId, $connection['fingerprint'], $walletName, $connection['xpub'], $payout);
         $statusMessage = __('Your wallet is connected.', ELEKTRON_ESCROW_DOMAIN);
     } catch (InvalidArgumentException $e) {
         $errorMessage = __($e->getMessage(), ELEKTRON_ESCROW_DOMAIN);

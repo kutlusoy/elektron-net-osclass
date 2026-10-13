@@ -116,7 +116,7 @@ Custom routes (via `osc_add_route()`, registered unconditionally at the top leve
 |---|---|---|---|
 | `elektron_escrow_checkout` | `elektron-escrow/checkout?item=<id>` | `controllers/checkout.php` | GET shows a no-side-effect preview; only a POST with `confirm_checkout=1` and a valid CSRF token creates the deal (status `awaiting_payment`, the escrow is fixed at once from both connected wallets), rendered in the same response. Both parties must have connected a wallet. An existing open deal for the same item and buyer is shown instead of the preview. |
 | `elektron_escrow_order_status` | `elektron-escrow/order?order=<id>` | `controllers/order-status.php` | The deal page for either party: next step, escrow address and descriptor, PSBT text/QR/download blocks, history and messages. Every action is a POST with a `deal_action` marker and a CSRF token and goes through `elektron_escrow_deal_perform()`. |
-| `elektron_escrow_wallet` | `elektron-escrow/wallet` | `controllers/wallet.php` | Connects a wallet once per account: the user pastes the output of the node console command `listdescriptors` (without `true`). `WalletConnection` extracts the account public key; anything containing a private key is refused before further processing and never stored or shown. A script on the page also blocks the submit. |
+| `elektron_escrow_wallet` | `elektron-escrow/wallet` | `controllers/wallet.php` | Connects a wallet once per account: the user pastes the output of the node console command `gethdkeys {"active_only":true}` (without `private`). `WalletConnection` extracts the master public key; anything containing a private key is refused before further processing and never stored or shown. A script on the page also blocks the submit. |
 | `elektron_escrow_orders` | `elektron-escrow/orders` | `controllers/orders.php` | "My Elektron orders": every deal the user is a party to, with a marker where it is their turn. |
 
 ## Database schema
@@ -131,7 +131,7 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 | `amount_lep` | The item's price in lep (1 ELEK = 100,000,000 lep), frozen at checkout. |
 | `status` | One of `ElektronNet\\Escrow\\DealStatus`. |
 | `buyer_shipping_*`, `buyer_contact_email` | Collected at checkout, shown to the seller once the payment is confirmed. |
-| `seller_pubkey`, `seller_exit_pubkey`, `buyer_pubkey`, `buyer_exit_pubkey` | Compressed public keys, hex: a main key for the cooperative path and an exit key for the refund or claim path each. Derived from the parties' connected wallets by `EscrowKeys` at checkout, in the index range `2000000000 + 2 * deal id` (main) and `+ 1` (exit) below the receiving chain of the account key, so they never clash with normal addresses and can be recreated from the seed and the deal number. The plugin never sees a private key. |
+| `seller_pubkey`, `seller_exit_pubkey`, `buyer_pubkey`, `buyer_exit_pubkey` | Compressed public keys, hex: a main key for the cooperative path and an exit key for the refund or claim path each. Derived from the parties' connected wallets by `EscrowKeys` at checkout, at `m/1370/(2n)` (main) and `m/1370/(2n+1)` (exit) of the master public key for deal number `n`. The path has no hardened step, which the node needs: it compares the keys of a miniscript without private keys and treats keys that need a hardened derivation as duplicates. The keys never clash with wallet addresses and can be recreated from the seed and the deal number. The plugin never sees a private key. |
 | `escrow_address`, `witness_script_hex` | The miniscript escrow built from both keys and both dates (`EscrowScript`). Fixed at checkout. |
 | `buyer_refund_locktime`, `seller_release_locktime` | T1 and T2 as unix timestamps, set together with the escrow address and written into its script. |
 | `funding_outputs` | JSON list of the confirmed, unspent outputs at the escrow address. The release PSBT must spend exactly these. |
@@ -140,7 +140,7 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 
 ### `elektron_escrow_wallet`
 
-One row per user who connected a wallet: `fk_i_user_id`, `s_fingerprint` and `s_origin_path` (as in the pasted descriptor), `s_xpub` (the account public key of the receiving chain), `s_payout_address` (optional). Public data only. The row is kept while the user has open deals.
+One row per user who connected a wallet: `fk_i_user_id`, `s_fingerprint` (wallet id), `s_wallet_name` (optional, the name in the node software), `s_xpub` (the master public key), `s_payout_address` (optional). Public data only. The row is kept while the user has open deals.
 
 ### `elektron_escrow_deal_event`
 
@@ -221,6 +221,6 @@ Deactivating the plugin (`elektron_escrow_uninstall()`) deletes its admin prefer
 
 ## Open Questions
 
-1. **Wallet coverage.** Connecting and signing work with the Elektron Net node wallet only, and the node must support miniscript descriptors. Electrum can pay the escrow address but can neither check nor sign it, and its master public key format (`zpub`, no origin) is not read.
+1. **Wallet coverage.** Connecting and signing work with the Elektron Net node wallet only, and the node must support miniscript descriptors. Electrum can pay the escrow address but can neither check nor sign it, and its master public key format (`zpub`) is not read.
 2. **Non-English locale sync.** Strings added with the deal workflow exist only in the source language until the locale files are regenerated.
 3. **Fees.** Exit and release fees are chosen by the wallet that builds the transaction.
