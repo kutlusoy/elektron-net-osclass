@@ -59,7 +59,7 @@ ECDSA validity is not verified by the plugin; the wallet that finalizes does tha
 
 ## 5. Wallet steps (node wallet)
 
-The wallet must support miniscript descriptors. The deal page shows the commands with the deal's values filled in.
+The wallet must support miniscript descriptors. The deal page shows the commands with the deal's values filled in. Every step names the exact text to copy from a result (`<COPY_...>`) and where to paste it (`<PASTE_...>`), with an example of the result.
 
 1. Connect: `gethdkeys '{"active_only":true}'` once, paste the result (section 3, step 1).
 2. Prepare, per deal, before signing: `gethdkeys '{"active_only":true,"private":true}'` locally gives the wallet key (`xprv...`, never shown to anyone, never pasted into the platform). The deal page shows one descriptor with `<XPRV>/1370/N` in place of the user's two keys and the other party's keys as public keys. After replacing `<XPRV>`, `getdescriptorinfo` returns the checksum of that line, and `importdescriptors` imports the same line with `#` and the checksum appended (the `descriptor` field of the `getdescriptorinfo` result has the private keys removed and MUST NOT be imported) (timestamp 0 if the payment is already confirmed). `getaddressinfo` on the escrow address must report `ismine` and `solvable` true and the address must equal the one shown, otherwise `walletcreatefundedpsbt` stops with "Not solvable pre-selected input". This is also the check that the platform did not swap a key.

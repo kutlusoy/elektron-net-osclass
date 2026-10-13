@@ -18,7 +18,7 @@ function elektron_escrow_keys_for(int $userId, int $dealId): ?array
 
 /**
  * The escrow descriptor with the viewer's own two keys written as private
- * key expressions of their wallet, still containing the <XPRV> placeholder.
+ * key expressions of their wallet, still containing the <PASTE_XPRV> placeholder.
  * The user replaces it in their own console; it never reaches this site.
  */
 function elektron_escrow_private_descriptor(array $deal, string $role): ?string
@@ -28,7 +28,7 @@ function elektron_escrow_private_descriptor(array $deal, string $role): ?string
         return null;
     }
     $keys = EscrowKeys::forDeal($wallet['s_xpub'], (int) $deal['pk_i_id'], elektron_escrow_network_params());
-    $prefix = '<XPRV>/' . EscrowKeys::BRANCH . '/';
+    $prefix = '<PASTE_XPRV>/' . EscrowKeys::BRANCH . '/';
 
     return Descriptor::escrowBody(
         $deal['seller_pubkey'],

@@ -136,7 +136,7 @@ function elektron_escrow_howto(string $what): string
     $hrp = elektron_escrow_network_params()->hrp();
     $body = '<p>' . sprintf(osc_esc_html(__('An address on this network starts with "%s1". It must belong to a wallet you control.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html($hrp)) . '</p>'
         . '<p><strong>' . osc_esc_html(__('Elektron Net node wallet', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
-        . '<p>' . osc_esc_html(__('Receive tab, "Create new receiving address", or in the console:', ELEKTRON_ESCROW_DOMAIN)) . '</p>' . $code('getnewaddress "payout" bech32')
+        . '<p>' . osc_esc_html(__('Receive tab, "Create new receiving address", or in the console:', ELEKTRON_ESCROW_DOMAIN)) . '</p>' . $code('getnewaddress "payout" bech32') . elektron_escrow_result_block('<COPY_ADDRESS>') . '<p>' . osc_esc_html(__('Paste <COPY_ADDRESS> (starts with', ELEKTRON_ESCROW_DOMAIN) . ' ' . $hrp . '1) ' . __('into the address field.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
         . '<p><strong>' . osc_esc_html(__('Electrum', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
         . '<p>' . osc_esc_html(__('Receive tab: the address shown there. Or Addresses tab, right-click an address, "Copy address".', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
         . '<p><strong>' . osc_esc_html(__('Other wallets', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
@@ -154,4 +154,15 @@ function elektron_escrow_where_console(): string
     return '<p class="elektron-escrow-why"><strong>' . osc_esc_html(__('Where do I type this?', ELEKTRON_ESCROW_DOMAIN)) . '</strong> '
         . osc_esc_html(__('In the Elektron Net node wallet open the menu Window, then Console. Paste the whole command, including all quotation marks, into the input line at the bottom and press Enter.', ELEKTRON_ESCROW_DOMAIN))
         . '</p>';
+}
+
+/**
+ * Example of what a console command prints, with the part to copy highlighted.
+ * Mark that part as <COPY_NAME> in $text.
+ */
+function elektron_escrow_result_block(string $text): string
+{
+    $html = preg_replace('/&lt;(COPY_[A-Z0-9_]+)&gt;/', '<mark>&lt;$1&gt;</mark>', osc_esc_html($text));
+
+    return '<p>' . osc_esc_html(__('The result looks like this. Copy only the highlighted part:', ELEKTRON_ESCROW_DOMAIN)) . '</p><pre class="elektron-escrow-code">' . $html . '</pre>';
 }
