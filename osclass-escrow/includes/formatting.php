@@ -53,6 +53,17 @@ function elektron_escrow_table_style(): void
     <style>
     .elektron-escrow-help { display: inline-block; position: relative; width: 1.35em; height: 1.35em; line-height: 1.35em; text-align: center; border-radius: 50%; background: #5b7fb5; color: #fff; font-size: 0.8em; font-weight: bold; cursor: help; vertical-align: middle; }
     .elektron-escrow-help:hover::after, .elektron-escrow-help:focus::after { content: attr(data-tip); position: absolute; z-index: 20; left: 0; top: 1.8em; width: 260px; max-width: 70vw; padding: 8px 10px; border-radius: 4px; background: #222; color: #fff; font-weight: normal; font-size: 1.05em; line-height: 1.4; text-align: left; white-space: normal; }
+        .elektron-escrow-order { display: flow-root; }
+        .elektron-escrow-order > * { clear: both; }
+        .elektron-escrow-panel { display: flow-root; border: 1px solid #ddd; border-radius: 4px; padding: 10px 16px; margin: 1.4em 0; }
+        .elektron-escrow-panel h3, .elektron-escrow-panel h4 { clear: both; margin: 0.8em 0 0.5em; }
+        .elektron-escrow-order form { display: block; clear: both; margin: 1em 0; }
+        .elektron-escrow-order .btn, .elektron-escrow-order input[type=submit] { float: none !important; display: inline-block; margin: 6px 6px 6px 0; position: static; }
+        .elektron-escrow-order details { display: block; clear: both; margin: 0.9em 0; padding: 6px 0; }
+        .elektron-escrow-order details > summary { cursor: pointer; padding: 4px 0; }
+        .elektron-escrow-order details details { margin-left: 1em; border-top: 1px dotted #ccc; }
+        .elektron-escrow-order pre.elektron-escrow-code, .elektron-escrow-order code.elektron-escrow-code { display: block; white-space: pre-wrap; word-break: break-all; margin: 0.6em 0 1em; }
+        .elektron-escrow-done { background: #1e7e34; color: #fff; border-radius: 3px; padding: 0 6px; font-size: 0.8em; font-weight: normal; text-decoration: none; display: inline-block; }
         .elektron-escrow-why { color: #555; font-size: 0.92em; }
         .elektron-escrow-howto { margin: 0.4em 0 1em; }
         .elektron-escrow-table { width: 100%; border-collapse: collapse; margin: 1em 0; }

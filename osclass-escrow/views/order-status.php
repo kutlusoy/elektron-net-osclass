@@ -147,7 +147,6 @@ elektron_escrow_table_style();
     .elektron-escrow-steps li.done { color: #2a7a2a; border-color: #2a7a2a; }
     .elektron-escrow-steps li.current { background: #fff3cd; border-color: #d4a017; color: #000; font-weight: bold; }
     .elektron-escrow-next { background: #eef6ff; border: 1px solid #9cc4f0; border-radius: 4px; padding: 10px 14px; margin: 1em 0; }
-    .elektron-escrow-panel { border: 1px solid #ddd; border-radius: 4px; padding: 6px 14px; margin: 1em 0; }
     .elektron-escrow-order textarea { width: 100%; box-sizing: border-box; }
     .elektron-escrow-order details { margin: 0.5em 0; }
     .elektron-escrow-todo { margin: 1em 0; padding-left: 1.6em; }
@@ -214,7 +213,7 @@ elektron_escrow_table_style();
         <p><strong><?php _e('Your steps. Every step is required, in this order:', ELEKTRON_ESCROW_DOMAIN); ?></strong></p>
         <ol class="elektron-escrow-todo">
             <?php foreach ($checklist as $step) { ?>
-                <li class="<?php echo $step[2] ? 'done' : ($step[0] === $currentKey ? 'current' : ''); ?>"><?php echo osc_esc_html($step[1]); ?> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span></li>
+                <li class="<?php echo $step[2] ? 'done' : ($step[0] === $currentKey ? 'current' : ''); ?>"><?php echo osc_esc_html($step[1]); ?> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php if ($step[2]) { ?> <span class="elektron-escrow-done"><?php _e('Done', ELEKTRON_ESCROW_DOMAIN); ?></span><?php } ?></li>
             <?php } ?>
         </ol>
     <?php } ?>
@@ -237,7 +236,7 @@ elektron_escrow_table_style();
 
     <?php if ($deal['escrow_address'] !== null && !DealStatus::isTerminal($status) && $descriptorTemplate !== null) { ?>
         <details class="elektron-escrow-panel"<?php echo $prepared ? '' : ' open'; ?>>
-            <summary><strong><?php echo $stepNumber('prepare'); ?>. <?php echo osc_esc_html($prepareLabel); ?></strong> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php echo $help('check_address'); ?></summary>
+            <summary><strong><?php echo $stepNumber('prepare'); ?>. <?php echo osc_esc_html($prepareLabel); ?></strong> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php if ($prepared) { ?> <span class="elektron-escrow-done"><?php printf(osc_esc_html(__('Done before, %s', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html(substr((string) $deal[$role . '_prepared_at'], 0, 10))); ?></span><?php } ?><?php echo $help('check_address'); ?></summary>
             <?php if (!empty($ownWallet['s_wallet_name'])) { echo $why(sprintf(__('Choose the wallet "%s" in the dropdown at the top of the console.', ELEKTRON_ESCROW_DOMAIN), $ownWallet['s_wallet_name'])); } ?>
             <?php $consoleHelp(__('Commands for the node wallet console', ELEKTRON_ESCROW_DOMAIN), [
                 $step(__('1. Get your wallet key', ELEKTRON_ESCROW_DOMAIN), __('Run this command. Copy the key from the result. Keep it for steps 2 and 3 and never show it to anyone.', ELEKTRON_ESCROW_DOMAIN), "gethdkeys '{\"active_only\":true,\"private\":true}'", '[{"xpub": "xpub661My...", "has_private": true, "xprv": "<COPY_XPRV>", ...}]', 'private_key'),
