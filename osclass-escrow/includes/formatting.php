@@ -70,6 +70,12 @@ function elektron_escrow_table_style(): void
         .elektron-escrow-emergency { display: block; clear: both; border: 2px solid #b00020; border-radius: 4px; padding: 6px 16px; margin: 1.6em 0; }
         .elektron-escrow-emergency > summary { color: #b00020; cursor: pointer; padding: 4px 0; }
         .elektron-escrow-dispute { border-color: #b36b00; }
+        .elektron-escrow-chain { display: block; clear: both; margin: 1em 0; }
+        .elektron-escrow-chain-step { display: flow-root; border: 1px solid #ddd; border-left: 6px solid #ccc; border-radius: 4px; padding: 8px 16px; margin: 0 0 14px; position: relative; }
+        .elektron-escrow-chain-step:not(:last-child)::after { content: ""; position: absolute; left: 20px; bottom: -14px; width: 2px; height: 14px; background: #ccc; }
+        .elektron-escrow-chain-step.current { border-left-color: #d4a017; background: #fffdf5; }
+        .elektron-escrow-chain-step.done { border-left-color: #1e7e34; }
+        .elektron-escrow-chain-step.waiting { opacity: 0.6; }
         .elektron-escrow-why { color: #555; font-size: 0.92em; }
         .elektron-escrow-howto { margin: 0.4em 0 1em; }
         .elektron-escrow-table { width: 100%; border-collapse: collapse; margin: 1em 0; }
