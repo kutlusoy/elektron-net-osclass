@@ -26,7 +26,7 @@ elektron_escrow_table_style();
         </tr>
     </table>
 
-    <p><?php _e('After you confirm, you and the seller exchange public keys and signed transactions step by step on the order page. Your own wallet creates every signature; this site never holds a key. The payment is held in a 2-of-2 escrow between you and the seller.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+    <p><?php _e('After you confirm, the order page shows a payment QR code. Your connected wallet provides the keys, your own wallet creates every signature, and this site never holds a key. The payment is held in an escrow between you and the seller.', ELEKTRON_ESCROW_DOMAIN); ?></p>
 
     <p><?php printf(
         __('If you do not confirm receipt, the seller can automatically claim the funds %d days after your payment is confirmed.', ELEKTRON_ESCROW_DOMAIN),
@@ -67,13 +67,6 @@ elektron_escrow_table_style();
         <input type="email" name="contact_email" id="contact_email" required maxlength="190" size="40"
                value="<?php echo osc_esc_html((string) (Params::getParam('contact_email') ?: $buyerEmail)); ?>" />
 
-        <h2><?php _e('Your public key (optional)', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('buyer_key_optional'); ?></h2>
-        <p>
-            <label for="buyer_pubkey"><?php _e('Your public key', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('pubkey'); ?><br />
-            <input type="text" name="buyer_pubkey" id="buyer_pubkey" size="70" maxlength="66" autocomplete="off" placeholder="02..."
-                   value="<?php echo osc_esc_html((string) Params::getParam('buyer_pubkey')); ?>" />
-        </p>
-        <?php echo elektron_escrow_howto('pubkey'); ?>
         <input type="submit" class="btn btn-primary" value="<?php echo osc_esc_html(__('Confirm and start the escrow', ELEKTRON_ESCROW_DOMAIN)); ?>" />
         <a class="btn btn-default" href="<?php echo osc_esc_html(osc_item_url_from_item($item)); ?>"><?php _e('Cancel', ELEKTRON_ESCROW_DOMAIN); ?></a>
     </form>

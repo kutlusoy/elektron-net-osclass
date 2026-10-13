@@ -8,7 +8,6 @@ namespace ElektronNet\Escrow;
  */
 final class DealStatus
 {
-    public const AWAITING_KEYS = 'awaiting_keys';
     public const AWAITING_PAYMENT = 'awaiting_payment';
     public const CONFIRMING = 'confirming';
     public const FUNDED = 'funded';
@@ -32,7 +31,7 @@ final class DealStatus
     ];
 
     /** Statuses in which no payment can exist yet and the deal can be cancelled. */
-    public const CANCELLABLE = [self::AWAITING_KEYS, self::AWAITING_PAYMENT];
+    public const CANCELLABLE = [self::AWAITING_PAYMENT];
 
     private const ACTORS = [
         self::AWAITING_PAYMENT => 'buyer',
@@ -47,21 +46,15 @@ final class DealStatus
     }
 
     /**
-     * Whether $role has something to do in this deal right now. Both keys
-     * may be submitted in any order, so while keys are missing each party
-     * with a missing key may act.
+     * Whether $role has something to do in this deal right now.
      */
     public static function mayAct(array $deal, string $role): bool
     {
-        if ($deal['status'] === self::AWAITING_KEYS) {
-            return empty($deal[$role . '_pubkey']);
-        }
-
         return self::actor($deal['status']) === $role;
     }
 
     /**
-     * @return string|null 'buyer' or 'seller' for a status with one fixed actor, null while the chain is being waited on, while keys are open, or once terminal
+     * @return string|null 'buyer' or 'seller' for a status with one fixed actor, null while the chain is being waited on or once terminal
      */
     public static function actor(string $status): ?string
     {

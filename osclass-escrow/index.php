@@ -22,7 +22,7 @@ Author URI: https://elektron-net.org
     require_once __DIR__ . '/vendor/autoload.php';
     require_once __DIR__ . '/install.php';
     require_once __DIR__ . '/models/EscrowDealDAO.php';
-    require_once __DIR__ . '/models/EscrowItemDAO.php';
+    require_once __DIR__ . '/models/EscrowWalletDAO.php';
     elektron_escrow_ensure_schema();
     require_once __DIR__ . '/includes/config.php';   // elektron_escrow_config()
     require_once __DIR__ . '/includes/i18n.php';     // status labels and next-step texts
@@ -32,7 +32,7 @@ Author URI: https://elektron-net.org
     require_once __DIR__ . '/includes/deal.php';     // workflow glue: perform, chain check, explorer links
     require_once __DIR__ . '/includes/mail.php';     // deal update emails
     require_once __DIR__ . '/includes/payment-watcher.php'; // elektron_escrow_check_all_deals()
-    require_once __DIR__ . '/includes/item-fields.php'; // optional seller key and payout address in the listing form
+    require_once __DIR__ . '/includes/wallet.php';   // connected wallet: keys per deal, setup commands
     require_once __DIR__ . '/includes/hooks.php';    // item widget, routes, cron
 
     // Activation / deactivation. See install.php.
@@ -106,4 +106,11 @@ Author URI: https://elektron-net.org
         'osclass-escrow/controllers/orders.php',
         true // same as above: account-menu chrome only; includes/hooks.php's 'user_menu_filter' hook
              // adds the actual link, alongside the wallet one.
+    );
+    osc_add_route(
+        'elektron_escrow_wallet',
+        'elektron-escrow/wallet(?![a-zA-Z])',
+        'elektron-escrow/wallet',
+        'osclass-escrow/controllers/wallet.php',
+        true // account-menu chrome, see the routes above
     );

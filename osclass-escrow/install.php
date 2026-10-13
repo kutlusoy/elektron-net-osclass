@@ -3,7 +3,7 @@
 /**
  * Runs once when the plugin is activated (see index.php's
  * osc_register_plugin() call). Creates the plugin's own tables (deals, deal
- * history, optional per-listing seller data) and
+ * history, connected wallets) and
  * seeds the admin-settings preferences with the suite-wide defaults.
  *
  * Nothing here touches Osclass/Shopclass's own tables (t_item, t_user, ...).
@@ -27,13 +27,15 @@ function elektron_escrow_create_deal_tables()
             fk_i_buyer_id INT(10) UNSIGNED NOT NULL,
             fk_i_seller_id INT(10) UNSIGNED NOT NULL,
             amount_lep BIGINT(20) UNSIGNED NOT NULL,
-            status VARCHAR(40) NOT NULL DEFAULT \'awaiting_keys\',
+            status VARCHAR(40) NOT NULL DEFAULT \'awaiting_payment\',
             buyer_shipping_name VARCHAR(190) NOT NULL,
             buyer_shipping_address TEXT NOT NULL,
             buyer_shipping_phone VARCHAR(40) NOT NULL,
             buyer_contact_email VARCHAR(190) NOT NULL,
             seller_pubkey VARCHAR(66) NULL,
+            seller_exit_pubkey VARCHAR(66) NULL,
             buyer_pubkey VARCHAR(66) NULL,
+            buyer_exit_pubkey VARCHAR(66) NULL,
             escrow_address VARCHAR(100) NULL,
             witness_script_hex TEXT NULL,
             buyer_refund_locktime INT(10) UNSIGNED NULL,
@@ -53,11 +55,14 @@ function elektron_escrow_create_deal_tables()
     );
 
     $dao->dao->query(
-        'CREATE TABLE IF NOT EXISTS ' . DB_TABLE_PREFIX . 'elektron_escrow_item (
-            fk_i_item_id INT(10) UNSIGNED NOT NULL,
-            seller_pubkey VARCHAR(66) NULL,
-            payout_address VARCHAR(100) NULL,
-            PRIMARY KEY (fk_i_item_id)
+        'CREATE TABLE IF NOT EXISTS ' . DB_TABLE_PREFIX . 'elektron_escrow_wallet (
+            fk_i_user_id INT(10) UNSIGNED NOT NULL,
+            s_fingerprint CHAR(8) NOT NULL,
+            s_origin_path VARCHAR(60) NOT NULL,
+            s_xpub VARCHAR(120) NOT NULL,
+            s_payout_address VARCHAR(100) NULL,
+            dt_pub_date DATETIME NOT NULL,
+            PRIMARY KEY (fk_i_user_id)
         ) ENGINE=InnoDB DEFAULT CHARACTER SET \'UTF8\' COLLATE \'UTF8_GENERAL_CI\''
     );
 
@@ -106,7 +111,7 @@ function elektron_escrow_set_default_preferences()
 function elektron_escrow_ensure_schema()
 {
     $dao = EscrowDealDAO::newInstance();
-    $result = $dao->dao->query("SHOW TABLES LIKE '" . DB_TABLE_PREFIX . "elektron_escrow_item'");
+    $result = $dao->dao->query("SHOW TABLES LIKE '" . DB_TABLE_PREFIX . "elektron_escrow_wallet'");
     if ($result && $result->numRows() > 0) {
         return;
     }

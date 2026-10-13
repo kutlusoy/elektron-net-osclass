@@ -1,0 +1,42 @@
+<?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
+
+use ElektronNet\Escrow\Descriptor;
+use ElektronNet\Escrow\EscrowKeys;
+
+/**
+ * The two public keys a user contributes to a deal, derived from the
+ * connected wallet. Null if the user has not connected a wallet.
+ *
+ * @return array{main:string,exit:string,mainIndex:int,exitIndex:int}|null
+ */
+function elektron_escrow_keys_for(int $userId, int $dealId): ?array
+{
+    $wallet = EscrowWalletDAO::newInstance()->forUser($userId);
+
+    return $wallet === null ? null : EscrowKeys::forDeal($wallet['s_xpub'], $dealId, elektron_escrow_network_params());
+}
+
+/**
+ * The escrow descriptor with the viewer's own two keys written as private
+ * key expressions of their wallet, still containing the <XPRV> placeholder.
+ * The user replaces it in their own console; it never reaches this site.
+ */
+function elektron_escrow_private_descriptor(array $deal, string $role): ?string
+{
+    $wallet = EscrowWalletDAO::newInstance()->forUser((int) $deal['fk_i_' . $role . '_id']);
+    if ($wallet === null || empty($deal['witness_script_hex'])) {
+        return null;
+    }
+    $keys = EscrowKeys::forDeal($wallet['s_xpub'], (int) $deal['pk_i_id'], elektron_escrow_network_params());
+    $prefix = '<XPRV>/' . $wallet['s_origin_path'] . '/0/';
+
+    return Descriptor::escrowBody(
+        $deal['seller_pubkey'],
+        $deal['seller_exit_pubkey'],
+        $deal['buyer_pubkey'],
+        $deal['buyer_exit_pubkey'],
+        (int) $deal['buyer_refund_locktime'],
+        (int) $deal['seller_release_locktime'],
+        [$keys['main'] => $prefix . $keys['mainIndex'], $keys['exit'] => $prefix . $keys['exitIndex']]
+    );
+}

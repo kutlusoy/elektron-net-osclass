@@ -11,6 +11,11 @@ osc_add_hook('user_menu_filter', function (array $options) {
         'url' => osc_route_url('elektron_escrow_orders'),
         'class' => 'opt_elektron_escrow_orders',
     );
+    $options[] = array(
+        'name' => __('My Elektron wallet', ELEKTRON_ESCROW_DOMAIN),
+        'url' => osc_route_url('elektron_escrow_wallet'),
+        'class' => 'opt_elektron_escrow_wallet',
+    );
 
     return $options;
 });
@@ -27,21 +32,6 @@ osc_add_hook('item_detail', function ($item) {
     $order = EscrowDealDAO::newInstance()->findOpenByItemAndBuyer((int) $item['pk_i_id'], (int) osc_logged_user_id());
     require osc_plugins_path() . 'osclass-escrow/views/item-widget.php';
 });
-
-/**
- * Optional seller fields in the listing form. 'item_form' (new listing) and
- * 'item_edit' (edit) render the fields, 'posted_item' and 'edited_item'
- * save them. The marker input makes a theme that does not render the fields
- * leave saved values untouched.
- */
-osc_add_hook('item_form', function ($catId = null) {
-    elektron_escrow_render_item_fields(null);
-});
-osc_add_hook('item_edit', function ($catId = null, $itemId = null) {
-    elektron_escrow_render_item_fields($itemId === null ? null : (int) $itemId);
-});
-osc_add_hook('posted_item', 'elektron_escrow_save_item_fields');
-osc_add_hook('edited_item', 'elektron_escrow_save_item_fields');
 
 /**
  * Chain watcher. Osclass throttles 'cron_minutely' to once per 5 minutes and

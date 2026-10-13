@@ -1,7 +1,17 @@
-<?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.'); ?>
+<?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
+/** @var string|null $statusMessage */
+/** @var string|null $errorMessage */
+?>
 
 <div class="element-inside">
     <h2><?php _e('Elektron Net Escrow settings', ELEKTRON_ESCROW_DOMAIN); ?></h2>
+
+    <?php if ($statusMessage !== null) { ?>
+        <p style="padding:8px 12px;background:#e6f4ea;border:1px solid #2a7a2a;"><?php echo osc_esc_html($statusMessage); ?></p>
+    <?php } ?>
+    <?php if ($errorMessage !== null) { ?>
+        <p style="padding:8px 12px;background:#fdecea;border:1px solid #c0392b;"><?php echo osc_esc_html($errorMessage); ?></p>
+    <?php } ?>
 
     <form method="post" action="<?php echo osc_admin_render_plugin_url('osclass-escrow/admin/settings.php'); ?>">
         <?php echo osc_csrf_token_form(); ?>

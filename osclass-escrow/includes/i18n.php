@@ -5,7 +5,6 @@ use ElektronNet\Escrow\DealStatus;
 function elektron_escrow_status_label(string $status): string
 {
     $labels = [
-        DealStatus::AWAITING_KEYS => __('Waiting for keys', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::AWAITING_PAYMENT => __('Waiting for payment', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::CONFIRMING => __('Confirming', ELEKTRON_ESCROW_DOMAIN),
         DealStatus::FUNDED => __('Funded', ELEKTRON_ESCROW_DOMAIN),
@@ -32,11 +31,6 @@ function elektron_escrow_next_step(array $deal, string $role): string
     $waiting = sprintf(__('Waiting for %s. You cannot continue until they have completed their step.', ELEKTRON_ESCROW_DOMAIN), $other);
 
     switch ($status) {
-        case DealStatus::AWAITING_KEYS:
-            if ($mine) {
-                return __('Submit the public key you will sign with. The private key stays in your wallet. When both keys are in, the escrow address is fixed.', ELEKTRON_ESCROW_DOMAIN);
-            }
-            return sprintf(__('Waiting for %s to submit their public key.', ELEKTRON_ESCROW_DOMAIN), $other);
         case DealStatus::AWAITING_PAYMENT:
             return $mine ? __('Check the escrow address in your wallet, then pay the amount to it. This page detects the payment on its own.', ELEKTRON_ESCROW_DOMAIN) : $waiting;
         case DealStatus::CONFIRMING:
@@ -66,9 +60,7 @@ function elektron_escrow_event_label(string $type): string
 {
     $labels = [
         'created' => __('Deal created', ELEKTRON_ESCROW_DOMAIN),
-        'seller_submit_key' => __('Seller submitted a public key', ELEKTRON_ESCROW_DOMAIN),
-        'buyer_submit_key' => __('Buyer submitted a public key', ELEKTRON_ESCROW_DOMAIN),
-        'escrow_fixed' => __('Both keys known, escrow address fixed', ELEKTRON_ESCROW_DOMAIN),
+        'escrow_fixed' => __('Escrow address fixed from both wallets', ELEKTRON_ESCROW_DOMAIN),
         'chain_confirming' => __('Payment seen on chain', ELEKTRON_ESCROW_DOMAIN),
         'chain_funded' => __('Payment confirmed on chain', ELEKTRON_ESCROW_DOMAIN),
         'seller_mark_shipped' => __('Seller reports shipping', ELEKTRON_ESCROW_DOMAIN),
@@ -92,7 +84,9 @@ function elektron_escrow_help_text(string $key): string
     $texts = [
         'status' => __('Where this deal currently stands. Only the person named under "Next step" can act. The other side has to wait, so nobody can run ahead.', ELEKTRON_ESCROW_DOMAIN),
         'escrow' => __('A special payment address that needs a signature from both of you to release the money. Nobody else, including this website, can move the funds.', ELEKTRON_ESCROW_DOMAIN),
-        'pubkey' => __('A public key is like an account number for signatures: 66 characters starting with 02 or 03. It is safe to share. The matching private key stays in your wallet and is never entered on this site. Open "How do I get this?" below the field to see where your wallet shows it.', ELEKTRON_ESCROW_DOMAIN),
+        'wallet_public' => __('The text you paste contains only public keys, comparable to account numbers. They let this site work out the keys for each deal. They cannot sign or spend. Text with a private key is refused.', ELEKTRON_ESCROW_DOMAIN),
+        'wallet_id' => __('A short id of your wallet, taken from the pasted text. Your wallet uses it to tell its keys apart.', ELEKTRON_ESCROW_DOMAIN),
+        'pubkey' => __('A public key is like an account number for signatures. It is safe to share. The matching private key stays in your wallet and is never entered on this site.', ELEKTRON_ESCROW_DOMAIN),
         'private_key' => __('Your private key proves you own the funds. Never paste it into this website. It is only used locally in your own wallet.', ELEKTRON_ESCROW_DOMAIN),
         'descriptor' => __('A text that describes the escrow address completely. Your wallet can calculate the same address from it, so you do not have to trust this page.', ELEKTRON_ESCROW_DOMAIN),
         'check_address' => __('Your wallet calculates the address on its own from both public keys. If it equals the address shown here, nobody swapped a key.', ELEKTRON_ESCROW_DOMAIN),
@@ -103,12 +97,11 @@ function elektron_escrow_help_text(string $key): string
         'finalize' => __('Turns the transaction with both signatures into the final form the network accepts.', ELEKTRON_ESCROW_DOMAIN),
         'broadcast' => __('Sends the finished transaction to the network. Only after this does money actually move.', ELEKTRON_ESCROW_DOMAIN),
         'txid' => __('The unique id of a transaction. Your wallet shows it after broadcasting. Others can look it up in a block explorer.', ELEKTRON_ESCROW_DOMAIN),
-        'payout' => __('An address of your own wallet that should receive the money. Open "How do I get this?" below the field to see where your wallet shows it.', ELEKTRON_ESCROW_DOMAIN),
-        'payout_optional' => __('Optional. If you give a public key and a payout address here, buyers do not have to wait for you to enter them and the deal is shorter. You can still change the payout address when you create the release.', ELEKTRON_ESCROW_DOMAIN),
-        'buyer_key_optional' => __('Optional. If you give your public key now, the escrow address is ready as soon as the seller has a key too. You can also add it later on the order page.', ELEKTRON_ESCROW_DOMAIN),
+        'fee_rate' => __('How much you pay the network for the transaction, in lep per byte. 10 is a normal value. Check the block explorer for current fees. The fee is taken from the amount you receive.', ELEKTRON_ESCROW_DOMAIN),
+        'payout' => __('An address of your own wallet that should receive the money. Open "How do I get this?" below the field to see where your wallet shows it. Optional: you can also enter it when the release is created.', ELEKTRON_ESCROW_DOMAIN),
         'message' => __('A short note to the other party. This is the only chat between you, nothing here changes the deal.', ELEKTRON_ESCROW_DOMAIN),
         'verify' => __('This site only shows what the other party submitted. Always check the amounts and addresses in your own wallet before you sign.', ELEKTRON_ESCROW_DOMAIN),
-        'console' => __('Commands you type into the console of your Elektron Net node wallet (Window, then Console). Replace the parts in angle brackets with your own values.', ELEKTRON_ESCROW_DOMAIN),
+        'console' => __('Commands you type into the console of your Elektron Net node wallet: menu Window, then Console. Choose your wallet in the dropdown at the top of the console. Paste a command including its quotation marks and press Enter. Replace the parts in angle brackets with your own values.', ELEKTRON_ESCROW_DOMAIN),
         'refund' => __('If the seller does not deliver, the buyer can take the money back alone after the refund date, with a transaction made in the buyer\'s own wallet.', ELEKTRON_ESCROW_DOMAIN),
         'claim' => __('If the buyer neither confirms nor refunds, the seller can take the money alone after the claim date, with a transaction made in the seller\'s own wallet.', ELEKTRON_ESCROW_DOMAIN),
     ];
@@ -130,35 +123,33 @@ function elektron_escrow_help(string $key): string
 }
 
 /**
- * "How do I get this?" block for a field, with the steps for the node
- * wallet, Electrum and other wallets. $what is 'pubkey' or 'address'.
+ * "How do I get this?" block for the payout address, with the steps for
+ * the node wallet, Electrum and other wallets.
  */
 function elektron_escrow_howto(string $what): string
 {
-    $note = '<p class="elektron-escrow-why">' . osc_esc_html(__('Menu names can differ slightly between versions.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
     $code = function (string $text): string {
         return '<code class="elektron-escrow-code">' . osc_esc_html($text) . '</code>';
     };
+    $hrp = elektron_escrow_network_params()->hrp();
+    $body = '<p>' . sprintf(osc_esc_html(__('An address on this network starts with "%s1". It must belong to a wallet you control.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html($hrp)) . '</p>'
+        . '<p><strong>' . osc_esc_html(__('Elektron Net node wallet', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
+        . '<p>' . osc_esc_html(__('Receive tab, "Create new receiving address", or in the console:', ELEKTRON_ESCROW_DOMAIN)) . '</p>' . $code('getnewaddress "payout" bech32')
+        . '<p><strong>' . osc_esc_html(__('Electrum', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
+        . '<p>' . osc_esc_html(__('Receive tab: the address shown there. Or Addresses tab, right-click an address, "Copy address".', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
+        . '<p><strong>' . osc_esc_html(__('Other wallets', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
+        . '<p>' . osc_esc_html(__('Use any receiving address of the wallet. Prefer a fresh one, and never an address of a service that you do not control.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
+        . '<p class="elektron-escrow-why">' . osc_esc_html(__('Menu names can differ slightly between versions.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
 
-    if ($what === 'pubkey') {
-        $body = '<p><strong>' . osc_esc_html(__('Elektron Net node wallet (console)', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
-            . '<p>' . osc_esc_html(__('Create a fresh address and show its details:', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
-            . $code('getnewaddress "escrow" bech32') . $code('getaddressinfo "<that address>"')
-            . '<p>' . osc_esc_html(__('The public key is the 66 character value in the field "pubkey" (or inside "desc"). The matching private key stays in this wallet and is used later for signing.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
-            . '<p><strong>' . osc_esc_html(__('Electrum', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
-            . '<p>' . osc_esc_html(__('Open the Addresses tab (View menu, Show Addresses), right-click an unused address and choose "Details". The public key is listed there. Electrum cannot sign this escrow itself, so you also need the matching private key in the node wallet: right-click the address, choose "Private key", enter your password and copy the key without the leading "p2wpkh:". Never paste it into this website.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
-            . '<p><strong>' . osc_esc_html(__('Other wallets', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
-            . '<p>' . osc_esc_html(__('Any wallet works that shows the public key of one of its addresses and can export the private key of that address (WIF). Wallets that never reveal private keys, such as hardware wallets, cannot be used.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
-    } else {
-        $hrp = elektron_escrow_network_params()->hrp();
-        $body = '<p>' . sprintf(osc_esc_html(__('An address on this network starts with "%s1". It must belong to a wallet you control.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html($hrp)) . '</p>'
-            . '<p><strong>' . osc_esc_html(__('Elektron Net node wallet', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
-            . '<p>' . osc_esc_html(__('Receive tab, "Create new receiving address", or in the console:', ELEKTRON_ESCROW_DOMAIN)) . '</p>' . $code('getnewaddress "payout" bech32')
-            . '<p><strong>' . osc_esc_html(__('Electrum', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
-            . '<p>' . osc_esc_html(__('Receive tab: the address shown there. Or Addresses tab, right-click an address, "Copy address".', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
-            . '<p><strong>' . osc_esc_html(__('Other wallets', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
-            . '<p>' . osc_esc_html(__('Use any receiving address of the wallet. Prefer a fresh one, and never an address of a service that you do not control.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
-    }
+    return '<details class="elektron-escrow-howto"><summary>' . osc_esc_html(__('How do I get this?', ELEKTRON_ESCROW_DOMAIN)) . '</summary>' . $body . '</details>';
+}
 
-    return '<details class="elektron-escrow-howto"><summary>' . osc_esc_html(__('How do I get this?', ELEKTRON_ESCROW_DOMAIN)) . '</summary>' . $body . $note . '</details>';
+/**
+ * Short instruction where to type node wallet commands.
+ */
+function elektron_escrow_where_console(): string
+{
+    return '<p class="elektron-escrow-why"><strong>' . osc_esc_html(__('Where do I type this?', ELEKTRON_ESCROW_DOMAIN)) . '</strong> '
+        . osc_esc_html(__('In the Elektron Net node wallet, open the menu Window, then Console. Choose your wallet in the dropdown at the top of the console. Paste the whole command including the quotation marks into the input line at the bottom and press Enter. Electrum has no such console. It can pay, but it cannot check or sign this escrow.', ELEKTRON_ESCROW_DOMAIN))
+        . '</p>';
 }

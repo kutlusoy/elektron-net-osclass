@@ -106,9 +106,7 @@ The resulting zip is what you upload through Osclass's own plugin installer, or 
 | `<plugin_path>_configure` | `index.php` | "Configure" action in the admin plugin list, renders `admin/settings.php`. |
 | `admin_menu_init` | `index.php` | Adds a dedicated "Elektron Net Escrow" entry under Admin > Plugins. |
 | `item_detail` | `includes/hooks.php` | Injects the "Buy with Elektron" / "View your order" widget on the item detail page. Receives the current item array. **Not** `show_item`: that hook fires from the item controller's own `doModel()` (data-preparation) method, before the theme emits any page markup at all, so output echoed from it lands ahead of the entire page instead of anywhere inside it; `item_detail` is the hook the theme's own template actually calls at the intended position (confirmed against the real, deployed `osclass-classifieds.com` theme, `oc-content/themes/sigma/item.php`), see "Status". |
-| `item_form`, `item_edit` | `includes/hooks.php` | Render the optional seller fields (public key, payout address) in the new-listing and edit forms, with tooltips and \"How do I get this?\" blocks. Shopclass renders these through its item form ajax call. |
-| `posted_item`, `edited_item` | `includes/hooks.php` | Save those fields (`includes/item-fields.php`). Invalid values are dropped with a flash message. A hidden marker input keeps a theme that does not render the fields from wiping saved values. |
-| `user_menu_filter` | `includes/hooks.php` | Adds the "My Elektron orders" page to the logged-in user's account menu, the same mechanism Shopclass's own billing feature uses (`hBilling.php`). |
+| `user_menu_filter` | `includes/hooks.php` | Adds the "My Elektron orders" and "My Elektron wallet" pages to the logged-in user's account menu, the same mechanism Shopclass's own billing feature uses (`hBilling.php`). |
 | `cron_minutely` | `includes/hooks.php` | The chain watcher, `elektron_escrow_check_all_deals()`: looks up the funding transaction of every deal that is waiting for it (`awaiting_funding_broadcast`, `confirming`). The deal page runs the same check on load. |
 | `cron_daily` | `includes/hooks.php` | Daily sweep that raises `elektron_escrow_buyer_refund_reminder_due` / `elektron_escrow_seller_release_reminder_due` for funded deals whose T1/T2 reminder window (`lib/ReminderScheduler.php`) is open. Delivery is left to whoever listens to these hooks. |
 
@@ -116,8 +114,9 @@ Custom routes (via `osc_add_route()`, registered unconditionally at the top leve
 
 | Route id | URL | Handler | Notes |
 |---|---|---|---|
-| `elektron_escrow_checkout` | `elektron-escrow/checkout?item=<id>` | `controllers/checkout.php` | GET shows a no-side-effect preview; only a POST with `confirm_checkout=1` and a valid CSRF token creates the deal (status `awaiting_seller_key`), rendered in the same response. An existing open deal for the same item and buyer is shown instead of the preview. |
+| `elektron_escrow_checkout` | `elektron-escrow/checkout?item=<id>` | `controllers/checkout.php` | GET shows a no-side-effect preview; only a POST with `confirm_checkout=1` and a valid CSRF token creates the deal (status `awaiting_payment`, the escrow is fixed at once from both connected wallets), rendered in the same response. Both parties must have connected a wallet. An existing open deal for the same item and buyer is shown instead of the preview. |
 | `elektron_escrow_order_status` | `elektron-escrow/order?order=<id>` | `controllers/order-status.php` | The deal page for either party: next step, escrow address and descriptor, PSBT text/QR/download blocks, history and messages. Every action is a POST with a `deal_action` marker and a CSRF token and goes through `elektron_escrow_deal_perform()`. |
+| `elektron_escrow_wallet` | `elektron-escrow/wallet` | `controllers/wallet.php` | Connects a wallet once per account: the user pastes the output of the node console command `listdescriptors` (without `true`). `WalletConnection` extracts the account public key; anything containing a private key is refused before further processing and never stored or shown. A script on the page also blocks the submit. |
 | `elektron_escrow_orders` | `elektron-escrow/orders` | `controllers/orders.php` | "My Elektron orders": every deal the user is a party to, with a marker where it is their turn. |
 
 ## Database schema
@@ -132,16 +131,16 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 | `amount_lep` | The item's price in lep (1 ELEK = 100,000,000 lep), frozen at checkout. |
 | `status` | One of `ElektronNet\\Escrow\\DealStatus`. |
 | `buyer_shipping_*`, `buyer_contact_email` | Collected at checkout, shown to the seller once the payment is confirmed. |
-| `seller_pubkey`, `buyer_pubkey` | Compressed public keys the parties submitted, hex. The plugin never generates or sees a private key. The seller's may come from the listing, the buyer's from checkout. |
-| `escrow_address`, `witness_script_hex` | The miniscript escrow built from both keys and both dates (`EscrowScript`). Fixed once the buyer key is submitted. |
+| `seller_pubkey`, `seller_exit_pubkey`, `buyer_pubkey`, `buyer_exit_pubkey` | Compressed public keys, hex: a main key for the cooperative path and an exit key for the refund or claim path each. Derived from the parties' connected wallets by `EscrowKeys` at checkout, in the index range `2000000000 + 2 * deal id` (main) and `+ 1` (exit) below the receiving chain of the account key, so they never clash with normal addresses and can be recreated from the seed and the deal number. The plugin never sees a private key. |
+| `escrow_address`, `witness_script_hex` | The miniscript escrow built from both keys and both dates (`EscrowScript`). Fixed at checkout. |
 | `buyer_refund_locktime`, `seller_release_locktime` | T1 and T2 as unix timestamps, set together with the escrow address and written into its script. |
 | `funding_outputs` | JSON list of the confirmed, unspent outputs at the escrow address. The release PSBT must spend exactly these. |
-| `seller_payout_address`, `release_psbt_signed` | The payout address (default from the listing, final value from the release submission) and the release PSBT carrying the seller's signature, after it passed the checks. |
+| `seller_payout_address`, `release_psbt_signed` | The payout address (default from the seller's wallet connection, final value from the release submission) and the release PSBT carrying the seller's signature, after it passed the checks. |
 | `closing_txid` | Transaction id the party reported when closing the deal. |
 
-### `elektron_escrow_item`
+### `elektron_escrow_wallet`
 
-Optional seller data per listing: `fk_i_item_id`, `seller_pubkey`, `payout_address`. Copied into a deal when it is created, so later edits never touch a running deal.
+One row per user who connected a wallet: `fk_i_user_id`, `s_fingerprint` and `s_origin_path` (as in the pasted descriptor), `s_xpub` (the account public key of the receiving chain), `s_payout_address` (optional). Public data only. The row is kept while the user has open deals.
 
 ### `elektron_escrow_deal_event`
 
@@ -198,12 +197,11 @@ The site is a relay and a passive display: it never holds a key, builds a transa
 
 | Status | Acts | Step |
 |---|---|---|
-| `awaiting_keys` | whoever has no key yet | Submits a public key, in any order. A key from the listing and one from checkout count. With both keys the escrow script, address and both dates are fixed. |
 | `awaiting_payment` | buyer | Pays the escrow address. The watcher detects it. |
 | `confirming` | chain | The watcher waits for the configured confirmations. |
 | `funded` | seller | Confirms shipping. The confirmed outputs are stored. |
 | `shipped` | buyer | Confirms receipt, refused too close to T1. |
-| `awaiting_seller_release` | seller | Builds and signs the release PSBT in their wallet and submits it with the address it pays (prefilled from the listing). |
+| `awaiting_seller_release` | seller | Builds and signs the release PSBT in their wallet and submits it with the address it pays (prefilled from the wallet connection). |
 | `awaiting_buyer_release` | buyer | Checks it in their wallet, signs, finalizes, broadcasts and reports the transaction id. |
 | `released`, `refunded`, `claimed`, `cancelled` | | Terminal. Refund (after T1, buyer) and claim (after T2, seller) are available from `confirming` onwards and report the transaction id. |
 
@@ -221,6 +219,6 @@ Deactivating the plugin (`elektron_escrow_uninstall()`) deletes its admin prefer
 
 ## Open Questions
 
-1. **Wallet coverage.** The deal page shows console commands for the Elektron Net node wallet only, and the node must support miniscript descriptors. Other wallets need their own instructions.
+1. **Wallet coverage.** Connecting and signing work with the Elektron Net node wallet only, and the node must support miniscript descriptors. Electrum can pay the escrow address but can neither check nor sign it, and its master public key format (`zpub`, no origin) is not read.
 2. **Non-English locale sync.** Strings added with the deal workflow exist only in the source language until the locale files are regenerated.
 3. **Fees.** Exit and release fees are chosen by the wallet that builds the transaction.
