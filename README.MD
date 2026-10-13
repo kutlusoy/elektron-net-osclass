@@ -86,6 +86,10 @@ The plugin ships as a zip that is extracted into `oc-content/plugins/osclass-esc
 ```bash
 git tag osclass-v0.1.0
 git push origin osclass-v0.1.0
+
+or
+
+git tag -d osclass-v0.1.0 && git push origin :osclass-v0.1.0 && git tag osclass-v0.1.0 && git push origin osclass-v0.1.0
 ```
 
 ## Repository structure
