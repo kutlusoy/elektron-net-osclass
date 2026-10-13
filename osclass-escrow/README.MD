@@ -209,7 +209,7 @@ Before the steps that lead to a signature, each party must tick a confirmation t
 
 Cancelling is possible for both parties until a payment is detected on the chain.
 
-A submitted release PSBT is parsed by `PsbtVerifier::assertReleasePsbt()`: it must spend exactly the stored escrow outputs, pay exactly one output to the stated address, carry a plausible fee, have no time lock, and hold only partial signatures of the seller's key with `SIGHASH_ALL`. Signature validity itself is checked by the wallet that finalizes. Everything a party submits is shown as reported; only confirmations come from the chain.
+A submitted release PSBT is parsed by `PsbtVerifier::assertReleasePsbt()`: it must spend exactly the stored escrow outputs, pay exactly one output to the stated address, carry a plausible fee, have no time lock, and hold only partial signatures of the seller's main key and optionally the seller's exit key with `SIGHASH_ALL`. Signature validity itself is checked by the wallet that finalizes. Everything a party submits is shown as reported; only confirmations come from the chain.
 
 ### Emails
 
