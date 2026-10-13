@@ -63,7 +63,7 @@ The wallet must support miniscript descriptors. The deal page shows the commands
 1. Keys: `getnewaddress` and `getaddressinfo` twice, submit the two public keys. Electrum shows the public key under the address details and exports the private key per address; the key then goes into the node wallet's descriptor, Electrum itself cannot sign this escrow.
 2. Check: `deriveaddresses "<public descriptor>"` must print the escrow address.
 3. Prepare: write the own two private keys into the descriptor in place of the own two public keys, add the checksum with `getdescriptorinfo`, import with `importdescriptors`.
-4. Release or exit: `walletcreatefundedpsbt` with the escrow outputs as inputs (`add_inputs` false, fee subtracted from the output, lock time and sequence for the exits), `walletprocesspsbt`, then `finalizepsbt` and `sendrawtransaction`.
+4. Release or exit: `walletcreatefundedpsbt` with the escrow outputs as inputs (`add_inputs` false, fee subtracted from the output, an explicit `fee_rate` because a node without fee estimates refuses to guess, lock time and sequence for the exits), `walletprocesspsbt`, then `finalizepsbt` and `sendrawtransaction`.
 
 These commands were written from the Bitcoin Core RPC reference and MUST be verified against a live Elektron Net node before this guideline leaves draft.
 

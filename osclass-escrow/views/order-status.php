@@ -64,7 +64,7 @@ $inputsJson = function (?int $sequence) use ($funding): string {
 };
 $createCommand = function (string $address, int $locktime, ?int $sequence) use ($inputsJson, $fundingTotalElek): string {
     return 'walletcreatefundedpsbt \'' . $inputsJson($sequence) . '\' \'[{"' . $address . '":' . $fundingTotalElek . '}]\' ' . $locktime
-        . ' \'{"add_inputs":false,"subtractFeeFromOutputs":[0]}\'';
+        . ' \'{"add_inputs":false,"subtractFeeFromOutputs":[0],"fee_rate":10}\'';
 };
 
 $help = 'elektron_escrow_help';
@@ -217,7 +217,7 @@ elektron_escrow_table_style();
                     break;
                 }
                 $consoleHelp(__('How do I create and sign the release? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
-                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The fee is taken from the amount.', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', 0, null)),
+                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The fee is taken from the amount. "fee_rate" is the fee in lep per virtual byte; 10 is a normal value, check the block explorer for current fees and change it if needed. Without it the wallet may stop with "Fee estimation failed".', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', 0, null)),
                     '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),
                     osc_esc_html(__('Paste the "psbt" value of the result below, together with your address.', ELEKTRON_ESCROW_DOMAIN)),
                 ]);
@@ -278,7 +278,7 @@ elektron_escrow_table_style();
             <?php } else { ?>
                 <p><?php _e('The date has passed. Create the transaction in your wallet, broadcast it, and enter its transaction id.', ELEKTRON_ESCROW_DOMAIN); ?></p>
                 <?php $consoleHelp(__('How do I do this? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
-                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The number before the options is the locked time.', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', $exitLocktime, 4294967294)),
+                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The number before the options is the locked time. "fee_rate" is the fee in lep per virtual byte; 10 is a normal value, check the block explorer for current fees and change it if needed.', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', $exitLocktime, 4294967294)),
                     '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),
                     '<strong>' . osc_esc_html(__('3. Finish it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('finalize') . $code('finalizepsbt "<psbt from step 2>"'),
                     '<strong>' . osc_esc_html(__('4. Send it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('broadcast') . $code('sendrawtransaction "<hex from step 3>"'),
