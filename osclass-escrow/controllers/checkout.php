@@ -1,20 +1,13 @@
 <?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
 
-use ElektronNet\Payments\Core\Escrow\PlainMultisigEscrowScriptBuilder;
-use ElektronNet\Payments\Core\Escrow\EscrowAddress;
-use ElektronNet\Payments\Core\Escrow\OrderStatus;
-use ElektronNet\Payments\Core\Escrow\XpubChildKeyDeriver;
+use ElektronNet\Escrow\DealException;
 
 /**
  * Route: elektron-escrow/checkout?item=<id>
- * GET shows a preview of the purchase (item, price, timeout policy) without
- * creating anything -- visiting this URL, or a crawler following the "Buy"
- * link, must never by itself commit to a real order. Only a POST with the
- * 'confirm_checkout' marker (and a valid CSRF token) actually creates the
- * escrow order, which is then rendered directly in this same response (see
- * includes/order-status.php's docblock for why this never redirects there
- * instead). See this plugin's README, "Routes" and "Order lifecycle", for
- * the full spec.
+ * GET shows a preview and creates nothing. Only a POST with
+ * 'confirm_checkout' and a valid CSRF token creates the deal, which is then
+ * rendered in the same response (a redirect from a custom-route controller
+ * fails once the theme header was sent, see includes/notice.php).
  */
 
 if (!osc_is_web_user_logged_in()) {
@@ -38,6 +31,7 @@ if (!$item) {
     );
     exit;
 }
+
 if ($item['fk_i_user_id'] == $buyerId) {
     elektron_escrow_render_notice(
         __('You cannot buy your own listing.', ELEKTRON_ESCROW_DOMAIN),
@@ -46,8 +40,8 @@ if ($item['fk_i_user_id'] == $buyerId) {
     );
     exit;
 }
-// Defense in depth: views/item-widget.php already hides the "Buy" link for
-// an ineligible currency, but this route is reachable directly by URL too.
+
+// The "Buy" link is already hidden for an ineligible currency, but this route is reachable directly.
 if (!in_array(strtoupper((string) ($item['fk_c_currency_code'] ?? '')), elektron_escrow_currency_codes(), true)) {
     elektron_escrow_render_notice(
         __('This listing is not priced in a currency accepted for escrow.', ELEKTRON_ESCROW_DOMAIN),
@@ -67,34 +61,10 @@ if ($amountElek === null) {
     exit;
 }
 
-$sellerId = (int) $item['fk_i_user_id'];
-$buyerXpub = elektron_escrow_get_user_xpub($buyerId);
-$sellerXpub = elektron_escrow_get_user_xpub($sellerId);
-
-if ($buyerXpub === null) {
-    elektron_escrow_render_notice(
-        __('Connect an Elektron Net wallet to your account first, then come back to this listing.', ELEKTRON_ESCROW_DOMAIN),
-        osc_route_url('elektron_escrow_wallet'),
-        __('Connect your wallet', ELEKTRON_ESCROW_DOMAIN)
-    );
-    exit;
-}
-if ($sellerXpub === null) {
-    elektron_escrow_render_notice(
-        __('The seller has not connected an Elektron Net wallet yet, so this listing cannot be bought with escrow right now.', ELEKTRON_ESCROW_DOMAIN),
-        osc_item_url_from_item($item),
-        __('Back to listing', ELEKTRON_ESCROW_DOMAIN)
-    );
-    exit;
-}
-
-$orderDao = EscrowOrderDAO::newInstance();
-$existingOrder = $orderDao->findByItemAndBuyer($itemId, $buyerId);
-
-// Already has a live order for this item: nothing left to confirm, so show
-// its permanent details page directly instead of the preview again.
-if ($existingOrder !== null) {
-    elektron_escrow_render_order_status($existingOrder, $buyerId);
+$dealDao = EscrowDealDAO::newInstance();
+$existingDeal = $dealDao->findOpenByItemAndBuyer($itemId, $buyerId);
+if ($existingDeal !== null) {
+    elektron_escrow_render_order_status($existingDeal, $buyerId);
     exit;
 }
 
@@ -123,65 +93,38 @@ if (Params::getParam('confirm_checkout') === '1') {
         exit;
     }
 
-    $fundedAt = time();
+    $itemData = EscrowItemDAO::newInstance()->forItem($itemId);
+    try {
+        $keyFields = elektron_escrow_workflow()->create($itemData['seller_pubkey'], trim((string) Params::getParam('buyer_pubkey')), time());
+    } catch (DealException $e) {
+        $errorMessage = __($e->getMessage(), ELEKTRON_ESCROW_DOMAIN);
+        $timeoutPolicy = $config->timeoutPolicy();
+        require osc_plugins_path() . 'osclass-escrow/views/checkout.php';
+        exit;
+    }
 
-    // A fresh child key per order, derived from each party's own xpub,
-    // replaces the old order-nonce-in-script approach for guaranteeing a
-    // unique escrow address per order -- see PlainMultisigEscrowScriptBuilder's
-    // and XpubChildKeyDeriver's docblocks for why. Each call permanently
-    // consumes one derivation index for that user, so this must only run
-    // once per order actually created below.
-    $buyerKey = elektron_escrow_derive_order_pubkey($buyerId);
-    $sellerKey = elektron_escrow_derive_order_pubkey($sellerId);
-
-    // A plain, stable address for the eventual payout, not the escrow
-    // address itself: reused across every order for this seller (fine --
-    // unlike the escrow address, nothing here ever polls it for incoming
-    // payments, so it is not subject to the same chain-data pagination
-    // assumption; see EsploraChainDataProvider's docblock). Always index 0,
-    // separate from the per-order signing-key indices above.
-    $sellerPayoutIndex = 0;
-    $sellerPayoutAddress = (new XpubChildKeyDeriver())->deriveChildAddress($sellerXpub, $sellerPayoutIndex, elektron_escrow_network());
-
-    $scriptBuilder = new PlainMultisigEscrowScriptBuilder(elektron_escrow_network());
-    $escrowAddress = $scriptBuilder->build($buyerKey['pubkeyHex'], $sellerKey['pubkeyHex'], $config->timeoutPolicy(), $fundedAt);
-
-    $amountLep = (int) round($amountElek * 100000000);
-
-    $orderDao->insert([
+    $dealId = $dealDao->insertDeal($keyFields + [
         'fk_i_item_id' => $itemId,
         'fk_i_buyer_id' => $buyerId,
-        'fk_i_seller_id' => $sellerId,
-        'buyer_pubkey' => $buyerKey['pubkeyHex'],
-        'buyer_pubkey_index' => $buyerKey['index'],
-        'seller_pubkey' => $sellerKey['pubkeyHex'],
-        'seller_pubkey_index' => $sellerKey['index'],
-        'seller_payout_address' => $sellerPayoutAddress,
-        'seller_payout_index' => $sellerPayoutIndex,
+        'fk_i_seller_id' => (int) $item['fk_i_user_id'],
+        'amount_lep' => (int) round($amountElek * 100000000),
         'buyer_shipping_name' => $shippingName,
         'buyer_shipping_address' => $shippingAddress,
         'buyer_shipping_phone' => $shippingPhone,
         'buyer_contact_email' => $contactEmail,
-        's_address' => $escrowAddress->address(),
-        'redeem_script_hex' => $escrowAddress->redeemScriptHex(),
-        'buyer_refund_locktime' => $escrowAddress->buyerRefundLocktime(),
-        'seller_release_locktime' => $escrowAddress->sellerReleaseLocktime(),
-        'amount_lep' => $amountLep,
-        'status' => OrderStatus::AWAITING_PAYMENT,
-        'psbt_signature_count' => 0,
-        'dt_pub_date' => date('Y-m-d H:i:s', $fundedAt),
+        'seller_payout_address' => $itemData['payout_address'],
+        'dt_pub_date' => date('Y-m-d H:i:s'),
     ]);
+    $dealDao->addEvent($dealId, $buyerId, 'created');
+    if (isset($keyFields['escrow_address'])) {
+        $dealDao->addEvent($dealId, 0, 'escrow_fixed');
+    }
 
-    $order = $orderDao->findByItemAndBuyer($itemId, $buyerId);
-
-    elektron_escrow_send_order_created_emails($order, $item, $amountElek);
-    elektron_escrow_render_order_status($order, $buyerId);
+    $deal = $dealDao->findByPrimaryKey($dealId);
+    elektron_escrow_send_turn_email($deal, true);
+    elektron_escrow_render_order_status($deal, $buyerId);
     exit;
 }
 
-// GET, no existing order, not confirmed yet: show the preview only. No
-// order, no escrow address, and no other side effect is created here --
-// see this file's own docblock for why that matters.
 $timeoutPolicy = $config->timeoutPolicy();
-
 require osc_plugins_path() . 'osclass-escrow/views/checkout.php';

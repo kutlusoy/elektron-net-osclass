@@ -1,165 +1,105 @@
-# Elektron Net Payments
+# Elektron Net Payments, Osclass Escrow
 
-- **Version:** 0.2 (draft)
-- **Date:** August 22, 2026
-- **Audience:** Marketplace operators, plugin developers, integrators
-- **Scope:** Suite-wide standard for every platform integration in this repository (Osclass today; WooCommerce and further platforms planned) and for the standalone `pay-server`
+- **Version:** 0.3 (draft)
+- **Date:** October 13, 2026
+- **Audience:** Marketplace operators, buyers and sellers
 - **Reference implementation:** [`elektron-net`](https://github.com/kutlusoy/elektron-net), treat as ground truth for anything this doc references
-- **Consumer:** [`osclass-escrow`](./osclass-escrow) and [`pay-server`](./pay-server), both part of this repository
-- **See also:** [`elektron-net-mempool`](https://github.com/kutlusoy/elektron-net-mempool) and [`elektron-net-electrs`](https://github.com/kutlusoy/elektron-net-electrs) for chain/watcher data
+- **Consumer:** [`osclass-escrow`](./osclass-escrow), the Osclass plugin in this repository
+- **See also:** [`osclass-escrow/README.MD`](osclass-escrow/README.MD), [`doc-elektron/guideline-escrow-psbt-relay.md`](doc-elektron/guideline-escrow-psbt-relay.md), [`elektron-net-mempool`](https://github.com/kutlusoy/elektron-net-mempool) and [`elektron-net-electrs`](https://github.com/kutlusoy/elektron-net-electrs) for chain data
 
 ---
 
-Multi-platform payment plugin suite for Elektron Net, plus a standalone, self-hostable payment server. This repository bundles trustless escrow integrations for third-party e-commerce platforms, starting with Osclass and planned to extend to WooCommerce and others; it also bundles `pay-server`, a REST API and watcher daemon any storefront can use directly, without a platform-specific plugin (see [`doc-elektron/guideline-standalone-payment-server.md`](doc-elektron/guideline-standalone-payment-server.md) and [`pay-server/README.MD`](pay-server/README.MD)). The escrow rules described below (timeout defaults, no signing or broadcasting by the plugin, fallback chain-data endpoints) are a suite-wide standard defined once in `core/` and inherited by every platform adapter and by `pay-server` alike, not something each integration reinvents.
-
-## Overview
-
-Elektron Net Payments lets marketplace operators accept Elektron Net (ELEK) as a payment method without relying on a centralized payment processor. Instead of a trusted third party holding funds, transactions use 2-of-2 multisig escrow with CLTV-based timeout paths, so buyers and sellers can transact directly while still having a built-in fallback if something goes wrong.
+Trustless escrow payments in Elektron Net (ELEK) for Osclass marketplaces. This repository contains one Osclass plugin. The plugin never holds a key and never builds, signs or broadcasts a transaction. Buyer and seller create and sign every transaction in their own wallet; the marketplace only passes information between them and shows where the deal stands.
 
 ## Why escrow instead of a simple payment gateway
 
-A standard payment plugin just forwards funds from buyer to seller. That works for card payments backed by a bank or processor that can reverse a charge, but it does not work well for irreversible on-chain payments. Elektron Net Payments solves this differently:
+On-chain payments are irreversible, so a plain gateway that forwards funds from buyer to seller offers no protection to either side. Here the buyer's payment goes to a 2-of-2 escrow address that only both parties can open together. There is no arbiter, no custodian, and the operator cannot touch the funds.
 
-- Funds are locked in a 2-of-2 multisig address controlled jointly by buyer and seller.
-- Funds only move when both parties agree, or automatically after a timeout, via CLTV-based fallback paths (buyer refund if the seller never delivers, seller release if the buyer never confirms). Default timeout lengths and how they can be adjusted are covered in [Escrow timeout policy](#escrow-timeout-policy) below.
-- No arbiter, no custodian, no platform holding customer funds at any point.
+## How it works
 
-## Repository structure
+The escrow is a single P2WSH miniscript, so every spending path is enforced on chain and a wallet that understands descriptors can build and sign it on its own:
 
-```
-elektron-net-payments/
-    core/                   Shared library: escrow script logic, chain-data access, i18n catalog
-    osclass-escrow/         Osclass plugin implementing the 2-of-2 escrow flow, on top of core/
-    pay-server/             Standalone payment server (pay-api, pay-watcher), on top of core/
-    scripts/                Build/release scripts for each deployable (plugin zip, pay-server images)
-    .github/workflows/      One CI/release workflow per platform adapter and per pay-server
-    doc-elektron/           Project documentation (guidelines, fix reports)
-```
+- both parties together can always spend,
+- after the refund date (T1) the buyer alone can reclaim,
+- after the claim date (T2) the seller alone can claim.
 
-Each platform integration, and `pay-server` itself, depends on `core/` rather than duplicating escrow logic. This keeps the core escrow behavior consistent across every plugin in the suite, and makes it straightforward to add support for additional platforms later. The timeout defaults, the frozen-per-order rule, and the chain-data fallback list described in this README all live in `core/`, so a new platform adapter (WooCommerce or otherwise) or `pay-server` itself gets them for free instead of having to reimplement them.
+No pre-signed transactions and no data from the marketplace are needed for the exits. Each party creates the transaction in their own wallet when it is needed.
+
+### Steps
+
+Every step can only be taken by the party it belongs to. The deal page names the next step and explains each term with a "?" helper and a "How do I get this?" block for keys and addresses (node wallet, Electrum, other wallets).
+
+1. **Listing (optional).** The seller can enter a public key and a payout address when creating the listing. That skips the seller's key step later.
+2. **Order placed.** The buyer starts the escrow purchase, enters shipping details and optionally a public key.
+3. **Keys.** Whoever has not given a public key yet submits one, in any order. With both keys the escrow address, its descriptor and both dates are fixed.
+4. **Payment.** The buyer checks the address in their own wallet (recommended) and pays it. A chain watcher and the deal page detect the payment and the confirmations.
+5. **Delivery.** The seller confirms shipping, the buyer confirms receipt. The seller ships only once their own wallet shows the confirmed payment.
+6. **Release.** The seller creates the release transaction in their wallet, paying themselves, signs it and pastes it into the deal page, which checks that it spends exactly the escrow payment, pays the stated address and carries only the seller's signature. The buyer checks it in their wallet, adds the second signature, broadcasts it and reports the transaction id.
+7. **If something goes wrong.** After T1 the buyer can reclaim the funds alone, after T2 the seller can claim them alone, each with a transaction from their own wallet. The deal page prefills the commands.
+
+A deal can be cancelled by either party until a payment is detected.
+
+The platform enforces only what protects against mistakes: who may act, that submitted keys are real public keys, that the release PSBT matches the escrow, and that receipt cannot be confirmed too close to the refund date. It does not force confirmations of things it cannot verify, such as having checked an address.
+
+## Trustless by design
+
+- No private key is ever typed into the marketplace.
+- Nobody builds a transaction for you. The marketplace shows what to do and checks what comes back; you create and sign in your own wallet.
+- All data on the deal page that was submitted by a party is shown as reported. Only confirmations come from the chain. Every party must verify addresses, amounts and transactions in their own wallet.
+
+## Chain data access
+
+The plugin only reads chain data. It queries an ordered list of Esplora-compatible endpoints (for example [`elektron-net-mempool`](https://github.com/kutlusoy/elektron-net-mempool)) with automatic failover. Running an own instance is recommended for production.
+
+## Escrow timeout policy
+
+### Defaults
+
+- **Buyer refund threshold (T1): 30 days** after the escrow address is fixed.
+- **Seller claim threshold (T2): 60 days** after the escrow address is fixed.
+- T2 is well past T1 so that the period in which both exits are valid is short.
+
+### Why neither party can set these per order
+
+The refund path only checks elapsed time, not delivery. A short buyer threshold would let a dishonest buyer keep the goods and reclaim the payment. A short seller threshold would let a dishonest seller claim the payment without shipping. Fixed, identical values remove that whole class of manipulation.
+
+### Admin-configurable, not user-configurable
+
+Operators can change T1 and T2 in the plugin's admin settings. Two guardrails apply: T2 MUST be at least 1.5 times T1, and both MUST stay within sane bounds (not below a few days, not above roughly half a year).
+
+### Values are fixed per deal
+
+T1 and T2 are written into the escrow script when its address is fixed and cannot change afterwards. Changing the admin default only affects later deals. Because the dates count from address creation, a payment made long after that leaves little time before T1. The seller is warned when T1 is close and should not ship then.
+
+### Countdown display
+
+The locktimes are timestamps, so the remaining time is exact. The deal page shows both dates, and the daily cron raises reminder hooks ahead of each date.
 
 ## Packaging and releases
 
-Each platform adapter ships as a plain zip a marketplace operator extracts straight into that platform's plugin directory (for Osclass: `oc-content/plugins/osclass-escrow/`), with its Composer dependencies (`core/` plus whichever third-party libraries it needs) already baked into its own `vendor/` folder. Nobody installing the plugin is expected to run Composer themselves; most Osclass hosting has no shell access to do that anyway. `pay-server` ships differently: as `pay-api` and `pay-watcher` Docker images (see [`pay-server/README.MD`](pay-server/README.MD)), since it is a self-hosted service rather than a platform plugin.
+The plugin ships as a zip that is extracted into `oc-content/plugins/osclass-escrow/`, with its dependencies already in `vendor/`.
 
-- `scripts/build-osclass-plugin.sh [version]` builds that zip locally: installs Composer dependencies with `--no-dev`, copies the shared core in as real files rather than a symlink (`osclass-escrow/composer.json`'s path repository sets `"symlink": false` for exactly this reason, since a symlink into a sibling directory stops resolving the moment the zip is extracted somewhere else), recompiles every `.mo` from its `.po` in case one was edited without recompiling, stamps the given version into `index.php`'s header, strips dev-only files (`composer.json`, `composer.lock`, the `.po`-to-`.mo` fallback compiler), and writes `dist/osclass-escrow-<version>.zip`.
-- `.github/workflows/release-osclass-escrow.yml` runs that same script in CI. Pushing a tag matching `osclass-v*` (e.g. `osclass-v0.1.0`) builds the zip and attaches it to a new GitHub Release; running the workflow manually (`workflow_dispatch`) instead builds a throwaway zip as a downloadable Actions artifact, for trying a build before committing to a real tag.
+- `scripts/build-osclass-plugin.sh [version]` installs the Composer dependencies with `--no-dev`, recompiles every `.mo` from its `.po`, stamps the version into `index.php`, strips dev-only files and writes `dist/osclass-escrow-<version>.zip`.
+- `.github/workflows/release-osclass-escrow.yml` runs the tests and the same script in CI. A tag matching `osclass-v*` builds the zip and attaches it to a GitHub Release; a manual run builds a throwaway artifact.
 
-Every future platform adapter gets its own `build-<platform>-plugin.sh` and `release-<platform>.yml`, scoped to its own tag prefix, rather than a shared workflow: that keeps one adapter's release from ever being able to build or publish another's.
-
-Tag:
 ```bash
 git tag osclass-v0.1.0
 git push origin osclass-v0.1.0
 ```
 
-If you must delete and tag new:
+## Repository structure
 
-```bash
-git tag -d osclass-v0.1.0 && git push origin :osclass-v0.1.0 && git tag osclass-v0.1.0 && git push origin osclass-v0.1.0
 ```
-
-## Trustless by design
-
-At no point does the server, the plugin, or the platform operator hold or have access to a private key belonging to the buyer or the seller. Only public keys and unsigned or partially signed transactions ever pass through the system. Funds can only move if the buyer and seller sign together, or if a timeout path is used, and that logic is enforced by the escrow script itself, not by a party that has to be trusted.
-
-The plugin never signs or broadcasts a transaction on either party's behalf. It only relays the PSBT (the partially signed transaction) between the buyer's and seller's wallets and reads chain data to update order status; signing and the final broadcast always happen inside the buyer's or seller's own wallet software.
-
-## Chain data access
-
-The watcher only ever reads chain data; it has no signing or broadcast capability of its own, for the same reason described above. It queries a configurable, ordered list of Elektron Net Electrum or Esplora-compatible endpoints, with automatic failover to the next entry if one is slow or unreachable. Operators can point this at a self-hosted node, a self-hosted [`elektron-net-electrs`](https://github.com/kutlusoy/elektron-net-electrs) or [`elektron-net-mempool`](https://github.com/kutlusoy/elektron-net-mempool) instance, or a third-party endpoint; running your own is recommended for production so payment confirmation does not depend on a service outside your control.
-
-## Standalone payment server (`pay-server`)
-
-Everything from "Overview" through "Chain data access" above describes the escrow flow as it runs inside a platform plugin (Osclass today). `pay-server` (see [`pay-server/README.MD`](pay-server/README.MD) for its current implementation status, and [`doc-elektron/guideline-standalone-payment-server.md`](doc-elektron/guideline-standalone-payment-server.md) for the full design) takes the same trust model and turns it into a self-hostable REST API, hosted checkout pages, an admin dashboard, and a watcher daemon that any storefront can use directly, with no platform-specific plugin required.
-
-- **Hosted checkout page, QR code included:** every order gets its own page (`/order/{id}`) with a payment QR code on desktop and a tap-to-pay wallet link on mobile, live status (paid/expired/etc.) pushed to the page the moment the watcher sees it, no manual refresh needed.
-- **Merchant admin dashboard:** a normal email/password login (separate from a merchant's API keys) to see the order list and each order's full event history, and to create or revoke scoped API keys.
-- **Two payment modes, one data model:** a **direct payment** is a single recipient with no counterparty and no timeout logic; an **escrow payment** is the same 2-of-2 multisig, CLTV-timeout flow described below, unchanged in its trust model. Both share the same `orders` table and API surface.
-- **Launch scope is direct payments only.** Escrow support ships as real, present code in `core/` from day one, not stripped out, but stays switched off end to end (API validation, admin UI, checkout UI) behind a single `ESCROW_ENABLED` flag (default `false`) until it is explicitly turned back on.
-- **Single-merchant or multi-merchant, same code path.** One instance can serve one storefront, or many merchants each with their own API key, branding, and settings; a single-merchant deployment is simply a `merchants` table with one row.
-- **Same non-custodial guarantee as the plugin:** `pay-server` never holds a private key belonging to a buyer, seller, or merchant. A direct-mode receiving address is derived from the merchant's own connected extended public key, never generated or held by the server itself.
-
-## How it works, step by step
-
-### 1. One-time wallet setup (buyer and seller)
-
-- Buyer and seller each connect an Elektron Net wallet to the marketplace account. This can be a browser extension, a desktop wallet, or a companion mobile wallet.
-- The wallet shares only its public key with the plugin. The private key never leaves the user's device.
-- This is a one-time step. It does not need to be repeated for future orders.
-
-### 2. Order placed
-
-- The buyer places an order on the marketplace as usual, with no extra steps compared to a normal checkout.
-- The plugin automatically generates a fresh 2-of-2 multisig escrow address for this specific order, built from the buyer's and the seller's public keys. This happens instantly and requires no action from either party.
-
-### 3. Payment
-
-- The buyer is shown the escrow address and amount, typically as a QR code, and pays from their wallet like any other Elektron Net payment.
-- A watcher daemon monitors the chain in the background and updates the order status automatically once the payment is detected and confirmed. Neither party needs to check anything manually.
-
-### 4. Delivery and confirmation
-
-- The seller ships or delivers the goods or service as agreed.
-- Once the buyer receives it and is satisfied, they confirm this in the marketplace with a single action.
-- That confirmation triggers the plugin to build a release transaction (a PSBT, or partially signed transaction) that pays the funds to the seller.
-
-### 5. Signing the release
-
-- The buyer's wallet prompts them to sign the release transaction. This is one click or one scan, similar to approving a payment.
-- The partially signed transaction is passed through the plugin to the seller's wallet, which signs it as well.
-- Once both signatures are present, the transaction is complete. The wallet that added the second signature broadcasts it to the network directly; the plugin itself never sends anything.
-
-### 6. If something goes wrong
-
-- If the seller never delivers, the buyer can reclaim the funds themselves once the buyer-side timeout (CLTV) has passed, without needing the seller's signature or cooperation. By default this is 30 days after the escrow address was funded.
-- If the buyer receives the goods but never confirms and never responds, the seller can claim the funds themselves once the longer seller-side timeout has passed, without needing the buyer's signature or cooperation. By default this is 60 days after funding.
-- These fallback paths are built into the escrow script from the start. Nobody needs to request them or set them up manually, and no arbiter or support ticket is required.
-- Neither the buyer nor the seller can change these timeouts for their own order; see [Escrow timeout policy](#escrow-timeout-policy) for how the values are set and why.
-
-### What stays simple for participants
-
-- No private keys are ever typed into the marketplace, the plugin, or any web form.
-- No manual address generation, no copying of scripts, no command line steps.
-- The only actions either party ever takes are: connect a wallet once, pay an address, and approve a signature when it matters (confirming receipt, or releasing funds). Address generation, payment detection, and PSBT construction are handled automatically by the plugin and the watcher daemon; signing and broadcasting always happen in the buyer's or seller's own wallet, never in the plugin.
-
-## Escrow timeout policy
-
-These rules are the suite-wide standard for every platform integration in this repository, defined once in `core/` so Osclass, WooCommerce, `pay-server`, and any future adapter all behave the same way.
-
-### Defaults
-
-- **Buyer refund threshold (T1): 30 days** after the escrow address is funded. From this point on, the buyer alone can reclaim the funds, even without the seller's cooperation.
-- **Seller release threshold (T2): 60 days** after the escrow address is funded. From this point on, the seller alone can claim the funds, even without the buyer's cooperation.
-- T2 is set well past T1 on purpose. It gives a slow or distracted buyer a full 30-day buffer after their own refund window opens before the seller's claim window opens, which keeps the period where both fallback paths are simultaneously valid as short as reasonably possible.
-
-### Why neither party can set these per order
-
-The buyer-refund path has no way to know whether delivery actually happened; it only checks elapsed time. A short buyer threshold would let a dishonest buyer keep the goods and still reclaim the payment. A short seller threshold would let a dishonest seller claim the payment without ever shipping, especially if the buyer is not watching the chain closely enough to react in time. Letting either side negotiate these values per order (or hide them in listing terms) reopens exactly those two problems. Keeping the values fixed and identical for every order removes that whole class of manipulation.
-
-### Admin-configurable, not user-configurable
-
-Marketplace operators can change T1 and T2 for their own installation in the plugin's admin settings; individual buyers and sellers cannot override them for a single order. Two guardrails apply to the admin setting itself:
-
-- T2 MUST exceed T1 by a safe margin (at least 1.5x); the plugin MUST reject a configuration that violates this.
-- T1 and T2 MUST stay within sane bounds (for example, not below a few days, not above roughly half a year), so an accidental misconfiguration cannot recreate the problems described above.
-
-### Values are frozen per order
-
-T1 and T2 are written into the escrow's redeem script at the moment its address is generated, not read from live configuration when a fallback path is used. Changing the admin default only affects orders placed afterward; every escrow already funded keeps the timeout values it was created with, even if the operator changes the defaults later.
-
-### Countdown display
-
-Because the locktime is expressed as a timestamp rather than a block height, the remaining time can be shown exactly rather than estimated from an average block interval. The order page shows one countdown at a time, depending on where the order currently stands:
-
-- Before the buyer confirms receipt: a countdown to the buyer's own refund threshold (T1).
-- If T1 has passed and the order is still unconfirmed: a countdown to the seller's release threshold (T2).
-
-The plugin also sends reminder notifications ahead of each threshold (for example a few days before T1 to the buyer, and a few days before T2 to the seller), so neither side has to actively watch the countdown to avoid missing their own window.
+elektron-net-payments/
+    osclass-escrow/         The Osclass plugin (lib/ holds the escrow logic, tests/ its checks)
+    scripts/                Build script for the plugin zip
+    .github/workflows/      Release workflow
+    doc-elektron/           Project documentation
+```
 
 ## Status
 
-This project is under active development. Interfaces, script structure, and supported platforms may change without notice while still in early versions.
+Under active development. The escrow script, address, descriptor checksum and PSBT checks are tested, including against independent implementations. The console commands shown to the parties have not been verified against a live Elektron Net node yet.
 
 ## License
 

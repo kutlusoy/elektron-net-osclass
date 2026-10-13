@@ -1,6 +1,6 @@
 <?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
 /** @var array $item Osclass item row */
-/** @var array|null $order this buyer's existing EscrowOrderDAO row for this item, if any */
+/** @var array|null $order this buyer's existing EscrowDealDAO row for this item, if any */
 
 // Escrow only ever applies to listings priced directly in one of the
 // admin-configured currency codes: converting a fiat-priced listing would
@@ -15,9 +15,6 @@ if (!in_array(strtoupper((string) ($item['fk_c_currency_code'] ?? '')), elektron
 }
 if (elektron_escrow_item_price_elek($item) === null) {
     return; // "price on request": no fixed amount to encode into an address
-}
-if (elektron_escrow_get_user_xpub((int) $item['fk_i_user_id']) === null) {
-    return; // seller has not connected a wallet yet, nothing to pay into
 }
 ?>
 
