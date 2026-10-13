@@ -8,7 +8,7 @@ use Endroid\QrCode\Writer\PngWriter;
  * controllers/order-status.php and controllers/checkout.php (see
  * includes/notice.php for why this is rendered instead of redirected to).
  */
-function elektron_escrow_render_order_status(array $deal, int $userId, ?string $statusMessage = null, ?string $errorMessage = null, ?array $built = null): void
+function elektron_escrow_render_order_status(array $deal, int $userId, ?string $statusMessage = null, ?string $errorMessage = null, ?array $built = null, ?array $buildInput = null): void
 {
     $role = elektron_escrow_deal_role($deal, $userId);
     $item = Item::newInstance()->findByPrimaryKey((int) $deal['fk_i_item_id']);
