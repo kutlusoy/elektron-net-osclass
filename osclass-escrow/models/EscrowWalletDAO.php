@@ -1,8 +1,7 @@
 <?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
 
 /**
- * The public part of a user's wallet: the account extended public key
- * with its origin, plus an optional payout address. Nothing secret is stored.
+ * The public part of a user's wallet: the master extended public key, plus an optional payout address. Nothing secret is stored.
  */
 class EscrowWalletDAO extends DAO
 {
@@ -23,7 +22,7 @@ class EscrowWalletDAO extends DAO
         parent::__construct();
         $this->setTableName('elektron_escrow_wallet');
         $this->setPrimaryKey('fk_i_user_id');
-        $this->setFields(['fk_i_user_id', 's_fingerprint', 's_origin_path', 's_xpub', 's_payout_address', 'dt_pub_date']);
+        $this->setFields(['fk_i_user_id', 's_fingerprint', 's_xpub', 's_payout_address', 'dt_pub_date']);
     }
 
     public function forUser(int $userId): ?array
@@ -33,9 +32,9 @@ class EscrowWalletDAO extends DAO
         return $row ?: null;
     }
 
-    public function saveForUser(int $userId, string $fingerprint, string $originPath, string $xpub, ?string $payoutAddress): void
+    public function saveForUser(int $userId, string $fingerprint, string $xpub, ?string $payoutAddress): void
     {
-        $fields = ['s_fingerprint' => $fingerprint, 's_origin_path' => $originPath, 's_xpub' => $xpub, 's_payout_address' => $payoutAddress ?: null];
+        $fields = ['s_fingerprint' => $fingerprint, 's_xpub' => $xpub, 's_payout_address' => $payoutAddress ?: null];
         if ($this->findByPrimaryKey($userId)) {
             $this->updateByPrimaryKey($fields, $userId);
         } else {

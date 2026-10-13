@@ -60,7 +60,6 @@ function elektron_escrow_create_deal_tables()
         'CREATE TABLE IF NOT EXISTS ' . DB_TABLE_PREFIX . 'elektron_escrow_wallet (
             fk_i_user_id INT(10) UNSIGNED NOT NULL,
             s_fingerprint CHAR(8) NOT NULL,
-            s_origin_path VARCHAR(60) NOT NULL,
             s_xpub VARCHAR(120) NOT NULL,
             s_payout_address VARCHAR(100) NULL,
             dt_pub_date DATETIME NOT NULL,

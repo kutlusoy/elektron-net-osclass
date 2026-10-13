@@ -129,31 +129,30 @@ $withWitness = substr($raw, 0, 4) . "\x00\x01" . substr($raw, 4, -4) . "\x02\x01
 check('txid ignores witness', RawTransaction::fromHex(bin2hex($withWitness))->txid() === $unsigned->txid());
 
 // Wallet connection
+$masterXpub = 'xpub661MyMwAqRbcFiyme9xRZe855HWfYxvTcYoWpX1E8ZW8DGu35DbthdTxz222XRihFsxrdH4BCEe32DBRyKEerW8CUMAB8FDziiNyDG4ecgT';
 $accountXpub = 'xpub6CUKWm4nWQEwWg7mBiA7PbAyvmzLb1DU898yUE9Zt78iPnFFc2YyodWtwqysPJbkEni56H2xFcZumxKHcmr8qVfAw5bwxq5YGRT97yeLxvC';
-$walletBody = 'wpkh([5a3469b6/84h/1370h/0h]' . $accountXpub . '/0/*)';
-$walletLine = $walletBody . '#' . Descriptor::checksum($walletBody);
-$walletDump = json_encode(['wallet_name' => 'escrow', 'descriptors' => [
-    ['desc' => $walletLine, 'timestamp' => 1, 'active' => true, 'internal' => false, 'range' => [0, 999], 'next' => 0],
-    ['desc' => 'wpkh([5a3469b6/84h/1370h/0h]' . $accountXpub . '/1/*)#00000000', 'timestamp' => 1, 'active' => true, 'internal' => true],
+$hdKeys = json_encode([[
+    'xpub' => $masterXpub,
+    'has_private' => true,
+    'descriptors' => [['desc' => 'wpkh([5a3469b6/84h/1370h/0h]' . $accountXpub . '/0/*)#00000000', 'active' => true]],
 ]], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-$connection = WalletConnection::parse($walletDump, $mainnet);
-check('wallet dump yields the receiving account key', $connection['xpub'] === $accountXpub && $connection['fingerprint'] === '5a3469b6' && $connection['originPath'] === '84h/1370h/0h');
-check('wallet single line is accepted', WalletConnection::parse($walletLine, $mainnet)['xpub'] === $accountXpub);
-check('wallet escaped slashes are accepted', WalletConnection::parse(str_replace('/', '\\/', $walletDump), $mainnet)['xpub'] === $accountXpub);
-check('wallet wrong checksum rejected', throws(function () use ($walletBody, $mainnet) { WalletConnection::parse($walletBody . '#aaaaaaaa', $mainnet); }, InvalidArgumentException::class));
-check('wallet private key rejected', throws(function () use ($mainnet) {
-    WalletConnection::parse('wpkh(xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi/84h/1370h/0h/0/*)', $mainnet);
+$connection = WalletConnection::parse($hdKeys, $mainnet);
+check('hdkeys output yields the master key and its fingerprint', $connection['xpub'] === $masterXpub && $connection['fingerprint'] === '5a3469b6');
+check('bare master key is accepted', WalletConnection::parse($masterXpub, $mainnet)['xpub'] === $masterXpub);
+check('private key rejected', throws(function () use ($mainnet) {
+    WalletConnection::parse('[{"xpub":"x","xprv":"xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"}]', $mainnet);
 }, InvalidArgumentException::class));
-check('wallet text without descriptor rejected', throws(function () use ($mainnet) { WalletConnection::parse('hello', $mainnet); }, InvalidArgumentException::class));
-check('wallet wrong network rejected', throws(function () use ($walletLine, $testnet) { WalletConnection::parse($walletLine, $testnet); }, InvalidArgumentException::class));
-check('wallet depth mismatch rejected', throws(function () use ($accountXpub, $mainnet) {
-    $body = 'wpkh([5a3469b6/84h/1370h]' . $accountXpub . '/0/*)';
-    WalletConnection::parse($body . '#' . Descriptor::checksum($body), $mainnet);
+check('text without a key rejected', throws(function () use ($mainnet) { WalletConnection::parse('hello', $mainnet); }, InvalidArgumentException::class));
+check('account key alone rejected', throws(function () use ($accountXpub, $mainnet) { WalletConnection::parse($accountXpub, $mainnet); }, InvalidArgumentException::class));
+check('wrong network rejected', throws(function () use ($masterXpub, $testnet) { WalletConnection::parse($masterXpub, $testnet); }, InvalidArgumentException::class));
+check('several master keys rejected', throws(function () use ($masterXpub, $mainnet) {
+    WalletConnection::parse($masterXpub . ' xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8', $mainnet);
 }, InvalidArgumentException::class));
 
-$dealKeys = EscrowKeys::forDeal($accountXpub, 18, $mainnet);
-check('escrow keys sit in the reserved range', $dealKeys['mainIndex'] === 2000000036 && $dealKeys['exitIndex'] === 2000000037);
-check('escrow keys match the reference derivation', strpos($dealKeys['main'], '02cf2280') === 0 && substr($dealKeys['main'], -4) === '5da4' && strpos($dealKeys['exit'], '02c82b20') === 0 && substr($dealKeys['exit'], -4) === '7e46');
-check('escrow keys reject deal number zero', throws(function () use ($accountXpub, $mainnet) { EscrowKeys::forDeal($accountXpub, 0, $mainnet); }, InvalidArgumentException::class));
+$dealKeys = EscrowKeys::forDeal($masterXpub, 18, $mainnet);
+check('escrow keys sit at m/1370/(2n) and m/1370/(2n+1)', $dealKeys['mainIndex'] === 36 && $dealKeys['exitIndex'] === 37);
+check('escrow keys match the reference derivation', $dealKeys['main'] === '035041e89c3b3fb6f89de215dc9f145acead0f97c1124c63c02477fcb914762ff5' && $dealKeys['exit'] === '02a9ae660777ad176343bdc14341850a6f680fca2320f5b6fbccbbf4c7f9efffa7');
+check('escrow keys reject deal number zero', throws(function () use ($masterXpub, $mainnet) { EscrowKeys::forDeal($masterXpub, 0, $mainnet); }, InvalidArgumentException::class));
+check('escrow keys reject a non master key', throws(function () use ($accountXpub, $mainnet) { EscrowKeys::forDeal($accountXpub, 1, $mainnet); }, InvalidArgumentException::class));
 
 finish();

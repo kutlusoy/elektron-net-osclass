@@ -41,11 +41,13 @@ final class Bip32
     }
 
     /**
-     * @return array{depth:int,chainCode:string,pubKey:string}
+     * First four bytes of the key's hash160, as hex: the wallet id shown in descriptors.
+     *
+     * @param array{depth:int,chainCode:string,pubKey:string} $node
      */
-    public static function parseXpubOrFail(string $xpub, NetworkParams $network): array
+    public static function fingerprint(array $node): string
     {
-        return self::parseXpub($xpub, $network);
+        return substr(hash('ripemd160', hash('sha256', hex2bin($node['pubKey']), true)), 0, 8);
     }
 
     /**

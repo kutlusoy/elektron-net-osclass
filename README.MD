@@ -31,7 +31,7 @@ No pre-signed transactions and no data from the marketplace are needed for the e
 
 Every step can only be taken by the party it belongs to. The deal page names the next step and explains each term with a "?" helper and a "How do I get this?" block for addresses (node wallet, Electrum, other wallets).
 
-1. **Connect wallet (once per account).** The user pastes the output of the node console command `listdescriptors` (without `true`) and optionally a payout address. Only public data is read; text with a private key is refused. Both parties need this before a deal.
+1. **Connect wallet (once per account).** The user pastes the output of the node console command `gethdkeys {"active_only":true}` (without `private`) and optionally a payout address. Only public data is read; text with a private key is refused. Both parties need this before a deal.
 2. **Order placed.** The buyer starts the escrow purchase and enters shipping details. The platform derives both parties' keys for this deal from their connected wallets and fixes the escrow address, its descriptor and both dates.
 3. **Payment.** The deal page shows a payment QR code. The buyer scans it with any wallet. The platform watches the block explorer and moves on by itself.
 4. **Delivery.** The seller confirms shipping, the buyer confirms receipt. The seller ships only once their own wallet shows the confirmed payment.

@@ -28,7 +28,7 @@ function elektron_escrow_private_descriptor(array $deal, string $role): ?string
         return null;
     }
     $keys = EscrowKeys::forDeal($wallet['s_xpub'], (int) $deal['pk_i_id'], elektron_escrow_network_params());
-    $prefix = '<XPRV>/' . $wallet['s_origin_path'] . '/0/';
+    $prefix = '<XPRV>/' . EscrowKeys::BRANCH . '/';
 
     return Descriptor::escrowBody(
         $deal['seller_pubkey'],

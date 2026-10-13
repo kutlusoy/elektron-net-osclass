@@ -39,15 +39,15 @@ elektron_escrow_table_style();
         <h2><?php echo $wallet === null ? osc_esc_html(__('Connect your wallet', ELEKTRON_ESCROW_DOMAIN)) : osc_esc_html(__('Replace the connected wallet', ELEKTRON_ESCROW_DOMAIN)); ?></h2>
         <ol>
             <li><?php _e('Open the Elektron Net node wallet, menu Window, then Console. Choose your wallet in the dropdown at the top.', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('console'); ?></li>
-            <li><?php _e('Type the command below and press Enter. Do not add the word true: that would show private keys.', ELEKTRON_ESCROW_DOMAIN); ?>
-                <code class="elektron-escrow-code">listdescriptors</code></li>
+            <li><?php _e('Type the command below and press Enter. Do not add "private": that would show the private key.', ELEKTRON_ESCROW_DOMAIN); ?>
+                <code class="elektron-escrow-code">gethdkeys {"active_only":true}</code></li>
             <li><?php _e('Select the whole result, copy it and paste it here.', ELEKTRON_ESCROW_DOMAIN); ?></li>
         </ol>
         <p>
-            <label for="wallet_text"><?php _e('Result of listdescriptors', ELEKTRON_ESCROW_DOMAIN); ?></label><br />
+            <label for="wallet_text"><?php _e('Result of gethdkeys', ELEKTRON_ESCROW_DOMAIN); ?></label><br />
             <textarea name="wallet_text" id="wallet_text" rows="8" required spellcheck="false" autocomplete="off" style="width:100%;box-sizing:border-box"></textarea>
         </p>
-        <p class="elektron-escrow-error" id="elektron-escrow-prv-warning" style="display:none"><?php _e('This text contains a private key. It was removed and nothing was sent. Run the command without "true" and paste that result instead.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+        <p class="elektron-escrow-error" id="elektron-escrow-prv-warning" style="display:none"><?php _e('This text contains a private key. It was removed and nothing was sent. Run the command without "private" and paste that result instead.', ELEKTRON_ESCROW_DOMAIN); ?></p>
         <p>
             <label for="payout_address"><?php _e('Payout address (optional)', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('payout'); ?><br />
             <input type="text" name="payout_address" id="payout_address" size="70" maxlength="100" autocomplete="off"
@@ -80,7 +80,7 @@ elektron_escrow_table_style();
 
     <details>
         <summary><?php _e('What does this site do with it?', ELEKTRON_ESCROW_DOMAIN); ?></summary>
-        <p><?php _e('It reads one public account key from the text and stores it with your wallet id. For every deal it derives two public keys from it, in a number range that your wallet never uses for normal addresses, so nothing clashes with your usual receiving addresses. Whoever knows the public account key can see your addresses and balances but cannot spend. Your private keys stay in your wallet, and only your wallet can sign.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+        <p><?php _e('It reads the public master key of your wallet from the text and stores it with your wallet id. For every deal it derives two public keys from it, on a path that your wallet never uses for normal addresses, so nothing clashes with your usual receiving addresses. Whoever knows the public master key can see your addresses and balances but cannot spend. Your private keys stay in your wallet, and only your wallet can sign.', ELEKTRON_ESCROW_DOMAIN); ?></p>
         <p><?php _e('Electrum and other wallets that cannot import an escrow descriptor are not supported for signing. The node wallet is.', ELEKTRON_ESCROW_DOMAIN); ?></p>
     </details>
 </div>

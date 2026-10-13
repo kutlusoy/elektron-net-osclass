@@ -6,8 +6,8 @@ use InvalidArgumentException;
 
 /**
  * Reads the public wallet data a user pastes (the output of the node
- * console command "listdescriptors" without "true", or just its wpkh line)
- * and returns the account extended public key with its origin.
+ * console command "gethdkeys") and returns the wallet's master extended
+ * public key with its fingerprint.
  *
  * Anything that contains a private key is refused so that it never gets
  * stored or processed.
@@ -15,7 +15,7 @@ use InvalidArgumentException;
 final class WalletConnection
 {
     private const PRIVATE_KEY = '/[xyztuv]prv[1-9A-HJ-NP-Za-km-z]{50,}/';
-    private const DESCRIPTOR = '/(?:wpkh\(\s*)?\[([0-9a-f]{8})((?:\/\d+[h\']?)+)\]([xt]pub[1-9A-HJ-NP-Za-km-z]{50,})\/0\/\*\)?(?:#([a-z0-9]{8}))?/';
+    private const EXTENDED_PUBLIC_KEY = '/[xt]pub[1-9A-HJ-NP-Za-km-z]{50,}/';
 
     private function __construct()
     {
@@ -27,34 +27,34 @@ final class WalletConnection
     }
 
     /**
-     * @return array{fingerprint:string,originPath:string,xpub:string}
+     * @return array{fingerprint:string,xpub:string}
      * @throws InvalidArgumentException with a message safe to show to the user
      */
     public static function parse(string $text, NetworkParams $network): array
     {
         if (self::containsPrivateKey($text)) {
-            throw new InvalidArgumentException('This text contains a private key. Do not paste it anywhere. Run the command without "true" and paste that output instead.');
+            throw new InvalidArgumentException('This text contains a private key. Do not paste it anywhere. Run the command without "private" and paste that output instead.');
         }
-        $text = str_replace('\\/', '/', $text);
-        if (!preg_match(self::DESCRIPTOR, $text, $match)) {
-            throw new InvalidArgumentException('No receiving descriptor of the form wpkh([fingerprint/84h/...]xpub.../0/*) was found.');
-        }
-        [$whole, $fingerprint, $origin, $xpub] = $match;
-        $checksum = $match[4] ?? '';
-
-        if ($checksum !== '' && strpos($whole, 'wpkh(') === 0) {
-            $body = substr($whole, 0, strpos($whole, '#'));
-            if (Descriptor::checksum($body) !== $checksum) {
-                throw new InvalidArgumentException('The descriptor checksum does not match. The text is incomplete or was changed.');
+        preg_match_all(self::EXTENDED_PUBLIC_KEY, $text, $matches);
+        $masters = [];
+        foreach (array_unique($matches[0]) as $candidate) {
+            try {
+                $node = Bip32::parseXpub($candidate, $network);
+            } catch (InvalidArgumentException $e) {
+                continue;
+            }
+            if ($node['depth'] === 0) {
+                $masters[$candidate] = $node;
             }
         }
-
-        $segments = array_values(array_filter(explode('/', str_replace("'", 'h', $origin)), 'strlen'));
-        $node = Bip32::parseXpubOrFail($xpub, $network);
-        if ($node['depth'] !== count($segments)) {
-            throw new InvalidArgumentException('The key does not match its path.');
+        if ($masters === []) {
+            throw new InvalidArgumentException('No wallet key was found. Paste the whole result of the command gethdkeys.');
         }
+        if (count($masters) > 1) {
+            throw new InvalidArgumentException('The text contains several wallet keys. Run gethdkeys {"active_only":true} and paste that result.');
+        }
+        $xpub = (string) array_key_first($masters);
 
-        return ['fingerprint' => $fingerprint, 'originPath' => implode('/', $segments), 'xpub' => $xpub];
+        return ['fingerprint' => Bip32::fingerprint($masters[$xpub]), 'xpub' => $xpub];
     }
 }
