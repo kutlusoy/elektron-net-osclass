@@ -44,6 +44,7 @@ function elektron_escrow_create_deal_tables()
             seller_payout_address VARCHAR(100) NULL,
             release_psbt_signed MEDIUMTEXT NULL,
             closing_txid VARCHAR(64) NULL,
+            b_item_relisted TINYINT(1) NOT NULL DEFAULT 0,
             buyer_prepared_at DATETIME NULL,
             seller_prepared_at DATETIME NULL,
             dt_pub_date DATETIME NOT NULL,
@@ -113,7 +114,7 @@ function elektron_escrow_set_default_preferences()
  */
 function elektron_escrow_ensure_schema()
 {
-    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '4') {
+    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '5') {
         return;
     }
     $dao = EscrowDealDAO::newInstance();
@@ -132,6 +133,7 @@ function elektron_escrow_ensure_schema()
         'seller_payout_address' => 'VARCHAR(100) NULL',
         'release_psbt_signed' => 'MEDIUMTEXT NULL',
         'closing_txid' => 'VARCHAR(64) NULL',
+        'b_item_relisted' => 'TINYINT(1) NOT NULL DEFAULT 0',
         'buyer_prepared_at' => 'DATETIME NULL',
         'seller_prepared_at' => 'DATETIME NULL',
         'dt_mod_date' => 'DATETIME NULL',
@@ -156,7 +158,7 @@ function elektron_escrow_ensure_schema()
     if (in_array('s_origin_path', $walletExisting, true)) {
         $dao->dao->query('ALTER TABLE ' . $walletTable . ' DROP COLUMN s_origin_path');
     }
-    Preference::newInstance()->replace('schema_version', '4', 'plugin-osclass-escrow', 'STRING');
+    Preference::newInstance()->replace('schema_version', '5', 'plugin-osclass-escrow', 'STRING');
 }
 
 function elektron_escrow_uninstall()

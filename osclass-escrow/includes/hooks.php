@@ -26,10 +26,10 @@ osc_add_hook('user_menu_filter', function (array $options) {
  * emitted and would place the widget above the page header.
  */
 osc_add_hook('item_detail', function ($item) {
-    if (!osc_logged_user_id() || osc_logged_user_id() === osc_item_user_id()) {
-        return;
-    }
-    $order = EscrowDealDAO::newInstance()->findOpenByItemAndBuyer((int) $item['pk_i_id'], (int) osc_logged_user_id());
+    $viewer = (int) osc_logged_user_id();
+    $isOwner = $viewer > 0 && $viewer === (int) $item['fk_i_user_id'];
+    $order = $viewer > 0 && !$isOwner ? EscrowDealDAO::newInstance()->findOpenByItemAndBuyer((int) $item['pk_i_id'], $viewer) : null;
+    $state = elektron_escrow_item_state((int) $item['pk_i_id']);
     require osc_plugins_path() . 'osclass-escrow/views/item-widget.php';
 });
 

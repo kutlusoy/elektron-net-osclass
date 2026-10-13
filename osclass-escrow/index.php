@@ -114,3 +114,9 @@ Author URI: https://elektron-net.org
         'osclass-escrow/controllers/wallet.php',
         true // account-menu chrome, see the routes above
     );
+    osc_add_route(
+        'elektron_escrow_relist',
+        'elektron-escrow/relist(?![a-zA-Z])',
+        'elektron-escrow/relist',
+        'osclass-escrow/controllers/relist.php'
+    );

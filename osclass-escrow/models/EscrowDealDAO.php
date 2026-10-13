@@ -30,7 +30,7 @@ class EscrowDealDAO extends DAO
             'buyer_shipping_name', 'buyer_shipping_address', 'buyer_shipping_phone', 'buyer_contact_email',
             'seller_pubkey', 'seller_exit_pubkey', 'buyer_pubkey', 'buyer_exit_pubkey', 'escrow_address', 'witness_script_hex',
             'buyer_refund_locktime', 'seller_release_locktime', 'funding_outputs',
-            'seller_payout_address', 'release_psbt_signed', 'closing_txid', 'buyer_prepared_at', 'seller_prepared_at',
+            'seller_payout_address', 'release_psbt_signed', 'closing_txid', 'b_item_relisted', 'buyer_prepared_at', 'seller_prepared_at',
             'dt_pub_date', 'dt_mod_date',
         ]);
     }
@@ -53,6 +53,53 @@ class EscrowDealDAO extends DAO
         }
 
         return $result->row();
+    }
+
+    /**
+     * The oldest unfinished deal of the listing: it holds the reservation.
+     */
+    public function findOpenByItem(int $itemId): ?array
+    {
+        $this->dao->select();
+        $this->dao->from($this->getTableName());
+        $this->dao->where('fk_i_item_id', $itemId);
+        $this->dao->whereNotIn('status', DealStatus::TERMINAL);
+        $this->dao->orderBy('pk_i_id', 'ASC');
+        $this->dao->limit(1);
+        $result = $this->dao->get();
+        if ($result === false || $result->numRows() < 1) {
+            return null;
+        }
+
+        return $result->row();
+    }
+
+    /**
+     * The latest finished sale of the listing that the seller has not put back on offer.
+     */
+    public function findSoldByItem(int $itemId): ?array
+    {
+        $this->dao->select();
+        $this->dao->from($this->getTableName());
+        $this->dao->where('fk_i_item_id', $itemId);
+        $this->dao->whereIn('status', DealStatus::SOLD);
+        $this->dao->where('b_item_relisted', 0);
+        $this->dao->orderBy('pk_i_id', 'DESC');
+        $this->dao->limit(1);
+        $result = $this->dao->get();
+        if ($result === false || $result->numRows() < 1) {
+            return null;
+        }
+
+        return $result->row();
+    }
+
+    /**
+     * Puts a sold listing back on offer, for sellers who have more of the same.
+     */
+    public function relistItem(int $itemId): void
+    {
+        $this->dao->update($this->getTableName(), ['b_item_relisted' => 1], ['fk_i_item_id' => $itemId]);
     }
 
     public function insertDeal(array $fields): int

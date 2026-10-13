@@ -42,6 +42,8 @@ Every non-terminal status has one party who may act (`DealStatus::mayAct()`); `D
 6. Release: the seller builds the release PSBT in their wallet, paying their own address, signs it and submits it with that address. The buyer checks it, adds the second signature, finalizes, broadcasts and reports the transaction id. The buyer signs last and therefore has the final say.
 7. After `T1` the buyer, after `T2` the seller, creates a transaction in their own wallet with the matching lock time and a non-final sequence, signs, finalizes and broadcasts it, and reports the transaction id.
 
+A listing counts as a single piece: it is reserved while a deal is open, sold after a release or claim, and free again after a cancellation or refund. The owner can put a sold listing back on offer.
+
 A key swapped by the platform cannot cost the buyer money: the seller's wallet would not see the payment and the seller would not ship, and the buyer reclaims after `T1`.
 
 ## 4. Release PSBT checks

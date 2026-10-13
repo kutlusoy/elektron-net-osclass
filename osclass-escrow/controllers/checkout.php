@@ -92,6 +92,18 @@ if ($existingDeal !== null) {
     exit;
 }
 
+$availability = elektron_escrow_item_state($itemId);
+if ($availability['state'] !== 'free') {
+    elektron_escrow_render_notice(
+        $availability['state'] === 'reserved'
+            ? __('This item is reserved: another buyer has started an Elektron purchase of it.', ELEKTRON_ESCROW_DOMAIN)
+            : __('This item is sold.', ELEKTRON_ESCROW_DOMAIN),
+        osc_item_url_from_item($item),
+        __('Back to listing', ELEKTRON_ESCROW_DOMAIN)
+    );
+    exit;
+}
+
 $config = elektron_escrow_config();
 $buyer = User::newInstance()->findByPrimaryKey($buyerId);
 $buyerEmail = $buyer !== false ? (string) $buyer['s_email'] : '';
@@ -146,6 +158,17 @@ if (Params::getParam('confirm_checkout') === '1') {
         $errorMessage = $e instanceof DealException ? __($e->getMessage(), ELEKTRON_ESCROW_DOMAIN) : __('The escrow could not be prepared. Reconnect your wallet and try again.', ELEKTRON_ESCROW_DOMAIN);
         $timeoutPolicy = $config->timeoutPolicy();
         require osc_plugins_path() . 'osclass-escrow/views/checkout.php';
+        exit;
+    }
+    // Two buyers can start at the same moment: the older deal keeps the item.
+    $holder = $dealDao->findOpenByItem($itemId);
+    if ($holder !== null && (int) $holder['pk_i_id'] !== $dealId) {
+        $dealDao->delete(['pk_i_id' => $dealId]);
+        elektron_escrow_render_notice(
+            __('This item is reserved: another buyer has started an Elektron purchase of it.', ELEKTRON_ESCROW_DOMAIN),
+            osc_item_url_from_item($item),
+            __('Back to listing', ELEKTRON_ESCROW_DOMAIN)
+        );
         exit;
     }
     $dealDao->updateByPrimaryKey($escrowFields, $dealId);

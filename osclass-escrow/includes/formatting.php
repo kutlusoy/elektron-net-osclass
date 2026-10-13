@@ -64,6 +64,9 @@ function elektron_escrow_table_style(): void
         .elektron-escrow-order details details { margin-left: 1em; border-top: 1px dotted #ccc; }
         .elektron-escrow-order pre.elektron-escrow-code, .elektron-escrow-order code.elektron-escrow-code { display: block; white-space: pre-wrap; word-break: break-all; margin: 0.6em 0 1em; }
         .elektron-escrow-done { background: #1e7e34; color: #fff; border-radius: 3px; padding: 0 6px; font-size: 0.8em; font-weight: normal; text-decoration: none; display: inline-block; }
+        .elektron-escrow-badge { display: inline-block; border-radius: 3px; padding: 2px 10px; font-weight: bold; color: #fff; }
+        .elektron-escrow-badge-reserved { background: #b36b00; }
+        .elektron-escrow-badge-sold { background: #555; }
         .elektron-escrow-why { color: #555; font-size: 0.92em; }
         .elektron-escrow-howto { margin: 0.4em 0 1em; }
         .elektron-escrow-table { width: 100%; border-collapse: collapse; margin: 1em 0; }
