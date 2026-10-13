@@ -33,7 +33,7 @@ function step(DealWorkflow $flow, array &$deal, string $action, string $role, ar
 $sellerPair = ['main' => $sellerKey, 'exit' => $sellerExit];
 $buyerPair = ['main' => $buyerKey, 'exit' => $buyerExit];
 $bad = '02' . str_repeat('00', 31) . '05';
-$deal = ['amount_lep' => 1000000] + $flow->create($sellerPair, $buyerPair, $now);
+$deal = ['amount_lep' => 1000000, 'seller_prepared_at' => null, 'buyer_prepared_at' => null] + $flow->create($sellerPair, $buyerPair, $now);
 check('escrow fixed with both dates', $deal['status'] === DealStatus::AWAITING_PAYMENT && strpos($deal['escrow_address'], 'tb1q') === 0
     && $deal['buyer_refund_locktime'] === $now + 30 * 86400 && $deal['seller_release_locktime'] === $now + 60 * 86400);
 check('create rejects an invalid key', rejected(function () use ($flow, $bad, $sellerExit, $buyerPair, $now) { $flow->create(['main' => $bad, 'exit' => $sellerExit], $buyerPair, $now); }));
@@ -51,6 +51,11 @@ $deal = array_merge($deal, $flow->advanceFromChain($confirming, 1000000, 3, 3));
 check('funded', $deal['status'] === DealStatus::FUNDED);
 check('cancel refused after payment', rejected(function () use ($flow, $deal, $now) { $flow->perform('cancel', $deal, 'buyer', [], $now); }));
 
+check('shipping needs the prepared wallet', rejected(function () use ($flow, $deal, $now) { $flow->perform('seller_mark_shipped', $deal, 'seller', [], $now); }));
+check('confirmation needs the checkbox', rejected(function () use ($flow, $deal, $now) { $flow->perform('confirm_prepared', $deal, 'seller', [], $now); }));
+step($flow, $deal, 'confirm_prepared', 'seller', ['confirmed' => '1'], $now);
+step($flow, $deal, 'confirm_prepared', 'buyer', ['confirmed' => '1'], $now);
+check('confirmation is stored per role', $deal['seller_prepared_at'] !== null && $deal['buyer_prepared_at'] !== null);
 check('buyer cannot mark shipped', rejected(function () use ($flow, $deal, $now) { $flow->perform('seller_mark_shipped', $deal, 'buyer', [], $now); }));
 step($flow, $deal, 'seller_mark_shipped', 'seller', [], $now);
 check('refund not yet allowed', rejected(function () use ($flow, $deal, $now) { $flow->perform('buyer_mark_refunded', $deal, 'buyer', ['txid' => str_repeat('a', 64)], $now + 86400); }));

@@ -38,24 +38,24 @@ $statusOrder = [
     DealStatus::AWAITING_SELLER_RELEASE => 4, DealStatus::AWAITING_BUYER_RELEASE => 5,
 ];
 $stage = $statusOrder[$status] ?? 6;
+$prepared = !empty($deal[$role . '_prepared_at']);
 $prepareLabel = __('Prepare your wallet for this deal (once, before you sign)', ELEKTRON_ESCROW_DOMAIN);
 $checklist = $isBuyer ? [
+    ['prepare', $prepareLabel, $prepared],
     ['pay', __('Pay the escrow address with the QR code', ELEKTRON_ESCROW_DOMAIN), $stage >= 1],
-    ['prepare', $prepareLabel, false],
     ['receive', __('Confirm receipt of the goods', ELEKTRON_ESCROW_DOMAIN), $stage >= 4],
     ['release', __('Check the seller\'s release, sign it and send it', ELEKTRON_ESCROW_DOMAIN), $stage >= 6],
 ] : [
-    ['prepare', $prepareLabel, false],
+    ['prepare', $prepareLabel, $prepared],
     ['ship', __('Ship the goods once the payment is confirmed, then confirm shipping', ELEKTRON_ESCROW_DOMAIN), $stage >= 3],
     ['release', __('Create and sign the release transaction', ELEKTRON_ESCROW_DOMAIN), $stage >= 5],
 ];
-$currentKey = [
-    DealStatus::AWAITING_PAYMENT => $isBuyer ? 'pay' : 'prepare',
-    DealStatus::CONFIRMING => 'prepare',
-    DealStatus::FUNDED => $isBuyer ? 'prepare' : 'ship',
-    DealStatus::SHIPPED => $isBuyer ? 'receive' : 'prepare',
-    DealStatus::AWAITING_SELLER_RELEASE => $isBuyer ? 'prepare' : 'release',
-    DealStatus::AWAITING_BUYER_RELEASE => $isBuyer ? 'release' : 'prepare',
+$currentKey = !$prepared ? 'prepare' : [
+    DealStatus::AWAITING_PAYMENT => 'pay',
+    DealStatus::FUNDED => 'ship',
+    DealStatus::SHIPPED => 'receive',
+    DealStatus::AWAITING_SELLER_RELEASE => 'release',
+    DealStatus::AWAITING_BUYER_RELEASE => 'release',
 ][$status] ?? null;
 $stepNumber = function (string $key) use ($checklist): int {
     foreach ($checklist as $index => $step) {
@@ -231,7 +231,7 @@ elektron_escrow_table_style();
     <?php } ?>
 
     <?php if ($deal['escrow_address'] !== null && !DealStatus::isTerminal($status) && $descriptorTemplate !== null) { ?>
-        <details class="elektron-escrow-panel">
+        <details class="elektron-escrow-panel"<?php echo $prepared ? '' : ' open'; ?>>
             <summary><strong><?php echo $stepNumber('prepare'); ?>. <?php echo osc_esc_html($prepareLabel); ?></strong> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php echo $help('check_address'); ?></summary>
             <?php echo $why(__('Why: your wallet needs to know this escrow and the keys it uses for it. The keys come from your connected wallet, so you only paste one value. Your wallet also recalculates the address, so you do not have to trust this page.', ELEKTRON_ESCROW_DOMAIN)); ?>
             <?php $consoleHelp(__('Commands for the node wallet console', ELEKTRON_ESCROW_DOMAIN), [
@@ -240,10 +240,25 @@ elektron_escrow_table_style();
                 '<strong>' . osc_esc_html(__('3. Import it', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('If the payment is not made yet, "now" is fine. If it is already confirmed, use 0 instead of "now" so the wallet finds it (this rescans and can take a while).', ELEKTRON_ESCROW_DOMAIN)) . $code('importdescriptors \'[{"desc":"<descriptor from step 2>","timestamp":"now"}]\''),
                 '<strong>' . osc_esc_html(__('4. Check', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('The result must show "ismine": true and "solvable": true, and the address must equal the escrow address above. Otherwise the wallet cannot sign for the escrow.', ELEKTRON_ESCROW_DOMAIN)) . $code('getaddressinfo "' . $deal['escrow_address'] . '"'),
             ]); ?>
+            <?php if ($prepared) { ?>
+                <p class="elektron-escrow-success"><?php printf(osc_esc_html(__('Confirmed on %s. You can come back to these commands at any time.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html((string) $deal[$role . '_prepared_at'])); ?></p>
+            <?php } else { ?>
+                <form method="post" action="<?php echo osc_esc_html(elektron_escrow_deal_url($deal)); ?>">
+                    <?php echo osc_csrf_token_form(); ?>
+                    <input type="hidden" name="deal_action" value="confirm_prepared" />
+                    <p><label><input type="checkbox" name="confirmed" value="1" required="required" />
+                        <?php _e('Yes, I have done all four steps above and my wallet shows "ismine": true and "solvable": true for the escrow address. I understand that otherwise I cannot sign for this escrow and my money can get stuck.', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
+                    <input type="submit" class="btn btn-primary" value="<?php echo osc_esc_html(__('Confirm and unlock the next steps', ELEKTRON_ESCROW_DOMAIN)); ?>" />
+                </form>
+            <?php } ?>
         </details>
     <?php } ?>
 
-    <?php if ($myTurn) { ?>
+    <?php if ($myTurn && !$prepared) { ?>
+        <p class="elektron-escrow-error"><?php _e('The next steps are locked until you confirm step 1 above.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+    <?php } ?>
+
+    <?php if ($myTurn && $prepared) { ?>
         <div class="elektron-escrow-panel">
         <?php if ($currentKey !== null && $stepNumber($currentKey) > 0) { ?>
             <h3><?php printf(osc_esc_html(__('Step %d', ELEKTRON_ESCROW_DOMAIN)), $stepNumber($currentKey)); ?>: <?php echo osc_esc_html($checklist[$stepNumber($currentKey) - 1][1]); ?> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span></h3>

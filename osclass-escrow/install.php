@@ -44,6 +44,8 @@ function elektron_escrow_create_deal_tables()
             seller_payout_address VARCHAR(100) NULL,
             release_psbt_signed MEDIUMTEXT NULL,
             closing_txid VARCHAR(64) NULL,
+            buyer_prepared_at DATETIME NULL,
+            seller_prepared_at DATETIME NULL,
             dt_pub_date DATETIME NOT NULL,
             dt_mod_date DATETIME NULL,
             PRIMARY KEY (pk_i_id),
@@ -111,7 +113,7 @@ function elektron_escrow_set_default_preferences()
  */
 function elektron_escrow_ensure_schema()
 {
-    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '2') {
+    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '3') {
         return;
     }
     $dao = EscrowDealDAO::newInstance();
@@ -130,6 +132,8 @@ function elektron_escrow_ensure_schema()
         'seller_payout_address' => 'VARCHAR(100) NULL',
         'release_psbt_signed' => 'MEDIUMTEXT NULL',
         'closing_txid' => 'VARCHAR(64) NULL',
+        'buyer_prepared_at' => 'DATETIME NULL',
+        'seller_prepared_at' => 'DATETIME NULL',
         'dt_mod_date' => 'DATETIME NULL',
     ];
     $table = DB_TABLE_PREFIX . 'elektron_escrow_deal';
@@ -143,7 +147,7 @@ function elektron_escrow_ensure_schema()
             $dao->dao->query('ALTER TABLE ' . $table . ' ADD COLUMN ' . $name . ' ' . $definition);
         }
     }
-    Preference::newInstance()->replace('schema_version', '2', 'plugin-osclass-escrow', 'STRING');
+    Preference::newInstance()->replace('schema_version', '3', 'plugin-osclass-escrow', 'STRING');
 }
 
 function elektron_escrow_uninstall()

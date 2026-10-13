@@ -69,6 +69,7 @@ function elektron_escrow_event_label(string $type): string
         'buyer_mark_released' => __('Buyer reports the release was broadcast', ELEKTRON_ESCROW_DOMAIN),
         'buyer_mark_refunded' => __('Buyer reports the refund was broadcast', ELEKTRON_ESCROW_DOMAIN),
         'seller_mark_claimed' => __('Seller reports the claim was broadcast', ELEKTRON_ESCROW_DOMAIN),
+        'confirm_prepared' => __('Wallet prepared for this deal', ELEKTRON_ESCROW_DOMAIN),
         'cancel' => __('Deal cancelled', ELEKTRON_ESCROW_DOMAIN),
         'message' => __('Message', ELEKTRON_ESCROW_DOMAIN),
     ];

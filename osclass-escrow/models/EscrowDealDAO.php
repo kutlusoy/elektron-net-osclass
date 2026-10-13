@@ -30,7 +30,7 @@ class EscrowDealDAO extends DAO
             'buyer_shipping_name', 'buyer_shipping_address', 'buyer_shipping_phone', 'buyer_contact_email',
             'seller_pubkey', 'seller_exit_pubkey', 'buyer_pubkey', 'buyer_exit_pubkey', 'escrow_address', 'witness_script_hex',
             'buyer_refund_locktime', 'seller_release_locktime', 'funding_outputs',
-            'seller_payout_address', 'release_psbt_signed', 'closing_txid',
+            'seller_payout_address', 'release_psbt_signed', 'closing_txid', 'buyer_prepared_at', 'seller_prepared_at',
             'dt_pub_date', 'dt_mod_date',
         ]);
     }
