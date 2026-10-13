@@ -25,6 +25,17 @@ if (Params::getParam('save') === 'elektron_escrow_settings') {
             (int) Params::getParam('buyer_refund_days'),
             (int) Params::getParam('seller_release_days')
         );
+        TimeoutPolicy::fromDays(
+            (int) Params::getParam('arbiter_buyer_refund_days'),
+            (int) Params::getParam('arbiter_seller_release_days')
+        );
+        $arbiterText = (string) Params::getParam('arbiter_text', false, false);
+        if (trim($arbiterText) !== '') {
+            elektron_escrow_arbiter_connect($arbiterText, trim((string) Params::getParam('arbiter_wallet_name', false, false)));
+        }
+        if (Params::getParam('arbiter_enabled') === '1' && elektron_escrow_arbiter_xpub() === '') {
+            throw new InvalidArgumentException(__('Connect the arbiter wallet first, then enable the arbiter.', ELEKTRON_ESCROW_DOMAIN));
+        }
     } catch (InvalidArgumentException $e) {
         $errorMessage = $e->getMessage();
     }
@@ -37,6 +48,9 @@ if (Params::getParam('save') === 'elektron_escrow_settings') {
             'required_confirmations' => (string) (int) Params::getParam('required_confirmations'),
             'buyer_refund_days' => (string) (int) Params::getParam('buyer_refund_days'),
             'seller_release_days' => (string) (int) Params::getParam('seller_release_days'),
+            'arbiter_enabled' => Params::getParam('arbiter_enabled') === '1' ? '1' : '0',
+            'arbiter_buyer_refund_days' => (string) (int) Params::getParam('arbiter_buyer_refund_days'),
+            'arbiter_seller_release_days' => (string) (int) Params::getParam('arbiter_seller_release_days'),
         ];
         // Preference::replace(), not update(): see install.php's docblock on
         // elektron_escrow_set_default_preferences() for why the DAO-inherited

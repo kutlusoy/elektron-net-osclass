@@ -21,10 +21,10 @@ final class Descriptor
      *
      * @param array<string,string> $replace
      */
-    public static function escrowBody(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime, array $replace = []): string
+    public static function escrowBody(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime, array $replace = [], ?string $arbiterKey = null): string
     {
-        [$low, $high] = EscrowScript::sortedKeys($sellerKey, $buyerKey);
-        $body = 'wsh(or_d(multi(2,' . $low . ',' . $high . '),or_i(and_v(v:pk(' . strtolower($buyerExitKey) . '),after(' . $refundLocktime . ')),and_v(v:pk(' . strtolower($sellerExitKey) . '),after(' . $claimLocktime . ')))))';
+        $multi = implode(',', EscrowScript::sortedKeys($sellerKey, $buyerKey, $arbiterKey));
+        $body = 'wsh(or_d(multi(2,' . $multi . '),or_i(and_v(v:pk(' . strtolower($buyerExitKey) . '),after(' . $refundLocktime . ')),and_v(v:pk(' . strtolower($sellerExitKey) . '),after(' . $claimLocktime . ')))))';
 
         foreach ($replace as $key => $text) {
             $body = str_replace(strtolower($key), $text, $body);
@@ -33,9 +33,9 @@ final class Descriptor
         return $body;
     }
 
-    public static function escrow(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime): string
+    public static function escrow(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime, ?string $arbiterKey = null): string
     {
-        return self::withChecksum(self::escrowBody($sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey, $refundLocktime, $claimLocktime));
+        return self::withChecksum(self::escrowBody($sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey, $refundLocktime, $claimLocktime, [], $arbiterKey));
     }
 
     public static function withChecksum(string $descriptor): string

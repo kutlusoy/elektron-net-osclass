@@ -14,7 +14,10 @@ use InvalidArgumentException;
  *             and_v(v:pk(SELLER_EXIT),after(T2))))
  *
  * Both parties together (their main keys, K1 and K2 in lexicographic order)
- * can always spend. After T1 the buyer alone can reclaim with the exit key,
+ * can always spend. With an arbiter the first part becomes
+ * multi(2,K1,K2,K3) over the two main keys and the arbiter key: any two of
+ * the three can spend, so the arbiter decides a dispute together with the
+ * party in the right and can never spend alone. After T1 the buyer alone can reclaim with the exit key,
  * after T2 the seller alone can claim with theirs. Miniscript forbids the
  * same key twice in one script, which is why each party has a main key and
  * a separate exit key.
@@ -22,6 +25,7 @@ use InvalidArgumentException;
 final class EscrowScript
 {
     private const OP_2 = '52';
+    private const OP_3 = '53';
     private const OP_CHECKMULTISIG = 'ae';
     private const OP_IFDUP = '73';
     private const OP_NOTIF = '64';
@@ -37,27 +41,42 @@ final class EscrowScript
     {
     }
 
-    public static function witnessScriptHex(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime): string
+    public static function witnessScriptHex(string $sellerKey, string $sellerExitKey, string $buyerKey, string $buyerExitKey, int $refundLocktime, int $claimLocktime, ?string $arbiterKey = null): string
     {
-        $keys = array_map('strtolower', [$sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey]);
+        $keys = array_map('strtolower', array_filter([$sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey, $arbiterKey], function ($key) {
+            return $key !== null;
+        }));
         foreach ($keys as $key) {
             if (!PubKey::isValidCompressed($key)) {
                 throw new InvalidArgumentException('Not a valid compressed public key.');
             }
         }
-        if (count(array_unique($keys)) !== 4) {
-            throw new InvalidArgumentException('All four public keys must be different.');
+        if (count(array_unique($keys)) !== count($keys)) {
+            throw new InvalidArgumentException('All public keys must be different.');
         }
         [$sellerKey, $sellerExitKey, $buyerKey, $buyerExitKey] = $keys;
         self::assertLocktimes($refundLocktime, $claimLocktime);
 
-        [$low, $high] = self::sortedKeys($sellerKey, $buyerKey);
+        $multi = self::multisigPart(self::sortedKeys($sellerKey, $buyerKey, $arbiterKey));
 
-        return self::OP_2 . '21' . $low . '21' . $high . self::OP_2 . self::OP_CHECKMULTISIG
+        return $multi
             . self::OP_IFDUP . self::OP_NOTIF
             . self::OP_IF . '21' . $buyerExitKey . self::OP_CHECKSIGVERIFY . self::pushNumber($refundLocktime) . self::OP_CLTV
             . self::OP_ELSE . '21' . $sellerExitKey . self::OP_CHECKSIGVERIFY . self::pushNumber($claimLocktime) . self::OP_CLTV
             . self::OP_ENDIF . self::OP_ENDIF;
+    }
+
+    /**
+     * @param string[] $sortedKeys two keys, or three with an arbiter
+     */
+    private static function multisigPart(array $sortedKeys): string
+    {
+        $part = self::OP_2;
+        foreach ($sortedKeys as $key) {
+            $part .= '21' . $key;
+        }
+
+        return $part . (count($sortedKeys) === 3 ? self::OP_3 : self::OP_2) . self::OP_CHECKMULTISIG;
     }
 
     public static function scriptPubKeyHex(string $witnessScriptHex): string
@@ -71,14 +90,16 @@ final class EscrowScript
     }
 
     /**
-     * @return string[] the two keys in script order
+     * @return string[] the keys of the multisig part in script order
      */
-    public static function sortedKeys(string $keyA, string $keyB): array
+    public static function sortedKeys(string $keyA, string $keyB, ?string $keyC = null): array
     {
-        $keys = [strtolower($keyA), strtolower($keyB)];
+        $keys = array_map('strtolower', array_filter([$keyA, $keyB, $keyC], function ($key) {
+            return $key !== null;
+        }));
         sort($keys, SORT_STRING);
 
-        return $keys;
+        return array_values($keys);
     }
 
     public static function assertLocktimes(int $refundLocktime, int $claimLocktime): void

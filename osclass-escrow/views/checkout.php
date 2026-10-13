@@ -37,6 +37,10 @@ elektron_escrow_table_style();
         $timeoutPolicy->buyerRefundDays()
     ); ?></p>
 
+    <?php if (elektron_escrow_arbiter_enabled()) { ?>
+        <p><?php _e('This marketplace has an arbiter. If buyer and seller cannot agree, either of you can call the arbiter, who decides together with the party in the right. The arbiter can never take the money alone.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+    <?php } ?>
+
     <?php if ($errorMessage !== null) { ?>
         <p class="elektron-escrow-error"><?php echo osc_esc_html($errorMessage); ?></p>
     <?php } ?>

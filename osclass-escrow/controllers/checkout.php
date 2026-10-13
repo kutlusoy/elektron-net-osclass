@@ -124,7 +124,7 @@ if (Params::getParam('confirm_checkout') === '1') {
     }
 
     if ($errorMessage !== null) {
-        $timeoutPolicy = $config->timeoutPolicy();
+        $timeoutPolicy = elektron_escrow_arbiter_enabled() ? elektron_escrow_arbiter_timeouts() : $config->timeoutPolicy();
         require osc_plugins_path() . 'osclass-escrow/views/checkout.php';
         exit;
     }
@@ -146,17 +146,19 @@ if (Params::getParam('confirm_checkout') === '1') {
             'dt_pub_date' => date('Y-m-d H:i:s'),
         ]);
         // The keys depend on the deal number, so the row comes first and the escrow is fixed right after.
-        $escrowFields = elektron_escrow_workflow()->create(
+        $withArbiter = elektron_escrow_arbiter_enabled();
+        $escrowFields = elektron_escrow_workflow($withArbiter)->create(
             elektron_escrow_keys_for($sellerId, $dealId),
             elektron_escrow_keys_for($buyerId, $dealId),
-            time()
+            time(),
+            $withArbiter ? elektron_escrow_arbiter_keys($dealId)['main'] : null
         );
     } catch (\Throwable $e) {
         if ($dealId > 0) {
             $dealDao->delete(['pk_i_id' => $dealId]);
         }
         $errorMessage = $e instanceof DealException ? __($e->getMessage(), ELEKTRON_ESCROW_DOMAIN) : __('The escrow could not be prepared. Reconnect your wallet and try again.', ELEKTRON_ESCROW_DOMAIN);
-        $timeoutPolicy = $config->timeoutPolicy();
+        $timeoutPolicy = elektron_escrow_arbiter_enabled() ? elektron_escrow_arbiter_timeouts() : $config->timeoutPolicy();
         require osc_plugins_path() . 'osclass-escrow/views/checkout.php';
         exit;
     }
@@ -176,7 +178,7 @@ if (Params::getParam('confirm_checkout') === '1') {
     if (!$deal || empty($deal['escrow_address'])) {
         $dealDao->delete(['pk_i_id' => $dealId]);
         $errorMessage = __('The escrow could not be prepared. Reconnect your wallet and try again.', ELEKTRON_ESCROW_DOMAIN);
-        $timeoutPolicy = $config->timeoutPolicy();
+        $timeoutPolicy = elektron_escrow_arbiter_enabled() ? elektron_escrow_arbiter_timeouts() : $config->timeoutPolicy();
         require osc_plugins_path() . 'osclass-escrow/views/checkout.php';
         exit;
     }
@@ -187,5 +189,5 @@ if (Params::getParam('confirm_checkout') === '1') {
     exit;
 }
 
-$timeoutPolicy = $config->timeoutPolicy();
+$timeoutPolicy = elektron_escrow_arbiter_enabled() ? elektron_escrow_arbiter_timeouts() : $config->timeoutPolicy();
 require osc_plugins_path() . 'osclass-escrow/views/checkout.php';

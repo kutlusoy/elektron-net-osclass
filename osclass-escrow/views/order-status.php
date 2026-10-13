@@ -33,6 +33,7 @@ $path = [
 ];
 $position = array_search($status, $path, true);
 
+$inDispute = in_array($status, [DealStatus::DISPUTED, DealStatus::RULED, DealStatus::AWAITING_ARBITER_SIGNATURE], true);
 $statusOrder = [
     DealStatus::AWAITING_PAYMENT => 0, DealStatus::CONFIRMING => 1, DealStatus::FUNDED => 2, DealStatus::SHIPPED => 3,
     DealStatus::AWAITING_SELLER_RELEASE => 4, DealStatus::AWAITING_BUYER_RELEASE => 5,
@@ -70,7 +71,7 @@ $stepNumber = function (string $key) use ($checklist): int {
 $publicDescriptor = null;
 $descriptorTemplate = null;
 if ($deal['witness_script_hex'] !== null) {
-    $publicDescriptor = Descriptor::escrow($deal['seller_pubkey'], $deal['seller_exit_pubkey'], $deal['buyer_pubkey'], $deal['buyer_exit_pubkey'], $t1, $t2);
+    $publicDescriptor = Descriptor::escrow($deal['seller_pubkey'], $deal['seller_exit_pubkey'], $deal['buyer_pubkey'], $deal['buyer_exit_pubkey'], $t1, $t2, $deal['arbiter_pubkey'] ?: null);
     $descriptorTemplate = elektron_escrow_private_descriptor($deal, $role);
 }
 $ownWallet = EscrowWalletDAO::newInstance()->forUser((int) $deal['fk_i_' . $role . '_id']);
@@ -121,6 +122,7 @@ $cmdStep = function (string $title, string $text, string $command, ?string $resu
 $psbtHelper = function (string $kind, string $defaultAddress) use ($deal, $dealId, $built, $why, $help): void {
     $titles = [
         'release' => __('Create the release PSBT for me', ELEKTRON_ESCROW_DOMAIN),
+        'ruled' => __('Create the PSBT for me', ELEKTRON_ESCROW_DOMAIN),
         'refund' => __('Create the refund PSBT for me', ELEKTRON_ESCROW_DOMAIN),
         'claim' => __('Create the claim PSBT for me', ELEKTRON_ESCROW_DOMAIN),
     ];
@@ -209,7 +211,19 @@ elektron_escrow_table_style();
 
     <div class="elektron-escrow-next"><strong><?php _e('Next step', ELEKTRON_ESCROW_DOMAIN); ?>:</strong> <?php echo osc_esc_html(elektron_escrow_next_step($deal, $role)); ?></div>
 
-    <?php if (!DealStatus::isTerminal($status)) { ?>
+    <?php if ($inDispute || $deal['dispute_opened_at'] !== null) { ?>
+        <div class="elektron-escrow-panel elektron-escrow-dispute">
+            <h3><?php _e('Dispute', ELEKTRON_ESCROW_DOMAIN); ?></h3>
+            <p><?php printf(osc_esc_html(__('Opened by the %1$s on %2$s.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html($deal['dispute_opened_by'] === 'buyer' ? __('buyer', ELEKTRON_ESCROW_DOMAIN) : __('seller', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html((string) $deal['dispute_opened_at'])); ?></p>
+            <p><?php echo nl2br(osc_esc_html((string) $deal['dispute_reason'])); ?></p>
+            <?php if (!empty($deal['ruling'])) { ?>
+                <p><strong><?php printf(osc_esc_html(__('Decision of the arbiter: the money goes to the %s.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html($deal['ruling'] === 'buyer' ? __('buyer', ELEKTRON_ESCROW_DOMAIN) : __('seller', ELEKTRON_ESCROW_DOMAIN))); ?></strong></p>
+                <p><?php echo nl2br(osc_esc_html((string) $deal['ruling_note'])); ?></p>
+            <?php } ?>
+        </div>
+    <?php } ?>
+
+    <?php if (!DealStatus::isTerminal($status) && !$inDispute) { ?>
         <p><strong><?php _e('Your steps. Every step is required, in this order:', ELEKTRON_ESCROW_DOMAIN); ?></strong></p>
         <ol class="elektron-escrow-todo">
             <?php foreach ($checklist as $step) { ?>
@@ -333,6 +347,24 @@ elektron_escrow_table_style();
                     'txid' => ['label' => __('Paste here: <COPY_TXID> from step 4', ELEKTRON_ESCROW_DOMAIN), 'help' => 'txid'],
                 ]);
                 break;
+
+            case DealStatus::RULED:
+                echo $why(__('Why: the arbiter decided in your favour. You prepare the transaction that pays you and sign it. The arbiter then adds the second signature and sends it.', ELEKTRON_ESCROW_DOMAIN));
+                if ($funding === []) {
+                    echo '<p>' . osc_esc_html(__('The payment outputs are not known yet. Use "Check the chain now" below.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
+                    break;
+                }
+                $psbtHelper('ruled', (string) ($isBuyer ? '' : $deal['seller_payout_address']));
+                $consoleHelp(__('How do I create and sign it? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
+                    $cmdStep(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <YOUR_ADDRESS> with an address of your own wallet and run it. The fee is taken from the amount, 10 is the fee in lep per byte.', ELEKTRON_ESCROW_DOMAIN), $createCommand('<YOUR_ADDRESS>', 0, null), '{"psbt": "<COPY_PSBT_1>", "fee": 0.000016, "changepos": -1}', 'psbt'),
+                    $cmdStep(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_PSBT_1> with <COPY_PSBT_1> and run it. "complete": false is correct, the arbiter signs next.', ELEKTRON_ESCROW_DOMAIN), 'walletprocesspsbt "<PASTE_PSBT_1>"', '{"psbt": "<COPY_PSBT_2>", "complete": false}', 'sign'),
+                    osc_esc_html(__('3. Paste <COPY_PSBT_2> into the field "Paste here" below and your address into the field above it.', ELEKTRON_ESCROW_DOMAIN)),
+                ]);
+                elektron_escrow_action_form($deal, 'winner_submit_psbt', __('Submit my signed transaction', ELEKTRON_ESCROW_DOMAIN), [
+                    'address' => ['label' => __('Paste here: the address you used in step 1', ELEKTRON_ESCROW_DOMAIN), 'help' => 'payout', 'value' => (string) ($isBuyer ? '' : $deal['seller_payout_address'])],
+                    'psbt' => ['label' => __('Paste here: <COPY_PSBT_2> from step 2 (signed transaction)', ELEKTRON_ESCROW_DOMAIN), 'type' => 'textarea', 'help' => 'psbt'],
+                ]);
+                break;
         } ?>
         </div>
     <?php } ?>
@@ -378,18 +410,15 @@ elektron_escrow_table_style();
         </div>
     <?php } ?>
 
-    <?php
-    if (in_array($status, DealStatus::CANCELLABLE, true)) {
-        elektron_escrow_action_form($deal, 'cancel', __('Cancel this deal', ELEKTRON_ESCROW_DOMAIN), [], __('Cancel this deal? Only possible while no payment was made.', ELEKTRON_ESCROW_DOMAIN));
-    }
-    ?>
-
     <h2><?php _e('History and messages', ELEKTRON_ESCROW_DOMAIN); ?></h2>
     <ul class="elektron-escrow-events">
         <?php foreach ($events as $event) { ?>
             <li>
                 <small><?php echo osc_esc_html($event['dt_pub_date']); ?></small>
-                <?php if ($event['s_type'] === 'message') { ?>
+                <?php if ($event['s_type'] === 'arbiter_message') { ?>
+                    <strong class="elektron-escrow-arbiter-label"><?php _e('Arbiter', ELEKTRON_ESCROW_DOMAIN); ?>:</strong>
+                    <?php echo nl2br(osc_esc_html((string) $event['s_text'])); ?>
+                <?php } elseif ($event['s_type'] === 'message') { ?>
                     <strong><?php echo ((int) $event['fk_i_user_id'] === (int) $deal['fk_i_buyer_id']) ? osc_esc_html(__('Buyer', ELEKTRON_ESCROW_DOMAIN)) : osc_esc_html(__('Seller', ELEKTRON_ESCROW_DOMAIN)); ?>:</strong>
                     <?php echo nl2br(osc_esc_html((string) $event['s_text'])); ?>
                 <?php } else { ?>
@@ -405,6 +434,30 @@ elektron_escrow_table_style();
     <?php elektron_escrow_action_form($deal, 'message', __('Send message', ELEKTRON_ESCROW_DOMAIN), [
         'message' => ['label' => __('Message to the other party', ELEKTRON_ESCROW_DOMAIN), 'help' => 'message'],
     ]); ?>
+
+    <?php
+    $canCancel = in_array($status, DealStatus::CANCELLABLE, true);
+    $canDispute = !empty($deal['arbiter_pubkey']) && in_array($status, DealStatus::DISPUTABLE, true);
+    if (!DealStatus::isTerminal($status)) { ?>
+        <details class="elektron-escrow-emergency">
+            <summary><strong><?php _e('Emergency', ELEKTRON_ESCROW_DOMAIN); ?></strong><?php echo $help('emergency'); ?></summary>
+            <?php if ($canCancel) { ?>
+                <h4><?php _e('Cancel this deal', ELEKTRON_ESCROW_DOMAIN); ?></h4>
+                <p><?php _e('Only possible while no payment was made. Either side can do it.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+                <?php elektron_escrow_action_form($deal, 'cancel', __('Cancel this deal', ELEKTRON_ESCROW_DOMAIN), [], __('Cancel this deal? Only possible while no payment was made.', ELEKTRON_ESCROW_DOMAIN)); ?>
+            <?php } ?>
+            <?php if ($canDispute) { ?>
+                <h4><?php _e('Call the arbiter', ELEKTRON_ESCROW_DOMAIN); ?><?php echo $help('dispute'); ?></h4>
+                <p><?php _e('Use this only if buyer and seller cannot agree, for example if the goods did not arrive or the buyer does not release the money after delivery. Talk to each other first, using the messages above.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+                <?php elektron_escrow_action_form($deal, 'open_dispute', __('Call the arbiter', ELEKTRON_ESCROW_DOMAIN), [
+                    'reason' => ['label' => __('What is the problem? The arbiter and the other party read this.', ELEKTRON_ESCROW_DOMAIN), 'type' => 'textarea'],
+                ], __('Call the arbiter now? Both parties can no longer continue without the arbiter.', ELEKTRON_ESCROW_DOMAIN)); ?>
+            <?php } ?>
+            <?php if (!$canCancel && !$canDispute) { ?>
+                <p><?php _e('Nothing to do here at the moment.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+            <?php } ?>
+        </details>
+    <?php } ?>
 
     <details>
         <summary><?php _e('Glossary', ELEKTRON_ESCROW_DOMAIN); ?></summary>

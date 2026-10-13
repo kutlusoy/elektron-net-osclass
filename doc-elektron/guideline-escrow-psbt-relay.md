@@ -30,6 +30,21 @@ wsh(or_d(multi(2,K1,K2),
 - The plugin validates that each key is a compressed point on secp256k1 (`PubKey`), so a mistyped key cannot produce an unspendable address.
 - The witness script compiled by `EscrowScript` was compared byte for byte with an independent miniscript compiler. That compiler does not apply the node's sanity rules, so the descriptor MUST also be accepted by `getdescriptorinfo` and `deriveaddresses` on a node. The descriptor checksum was compared with Electrum's and with the Bitcoin Core documentation vector.
 
+### 2.1 Arbiter variant
+
+Because the chain does not know whether the goods arrived, two parties alone cannot protect each other: whoever can leave the escrow first has a free option. An optional arbiter closes this gap. The multisig part becomes `multi(2,K1,K2,K3)` over the two main keys and the arbiter's key (sorted), the exit paths stay as they are:
+
+```
+wsh(or_d(multi(2,K1,K2,K3),
+         or_i(and_v(v:pk(BUYER_EXIT),after(T1)),
+              and_v(v:pk(SELLER_EXIT),after(T2)))))
+```
+
+- Any two of the three can spend. Cooperation of both parties works as before. In a dispute the arbiter signs with the party in the right. The arbiter can never spend alone, but arbiter and one party together can take the money of the other, so the arbiter must be trusted for disputes only.
+- T1 and T2 are later in a deal with arbiter (defaults 45 and 90 days) so that the arbiter can decide before an exit opens. They remain as a fallback when the arbiter does not act.
+- The arbiter's key per deal is derived from the arbiter wallet like the parties' keys. The script was compared with an independent miniscript compiler; the witness for the joint path stays `["", sigA, sigB, script]` with the two signatures in key order.
+- The platform stays a relay: the party in the right builds and signs the transaction, the arbiter adds the second signature in the own wallet and sends it.
+
 ## 3. Workflow
 
 Every non-terminal status has one party who may act (`DealStatus::mayAct()`); `DealWorkflow::perform()` rejects every other action. The platform enforces only what protects against mistakes.
@@ -71,6 +86,13 @@ The wallet must support miniscript descriptors. The deal page shows the commands
 
 These commands were written from the Bitcoin Core RPC reference and MUST be verified against a live Elektron Net node before this guideline leaves draft.
 
+## 5.1 Arbiter steps
+
+1. Call: either party opens a dispute from the emergency box once the payment is confirmed. The reason is stored with the history.
+2. Decision: the arbiter reads the history and messages on the admin page and chooses to pay the seller or the buyer, with a reason that both see. The arbiter can write to both parties at any time.
+3. The party in the right creates a transaction that pays them, signs it and submits it. The platform checks it like a release (`PsbtVerifier`).
+4. The arbiter prepares the own wallet for the deal (same four steps as the parties, with the arbiter's key), signs, finalizes, sends and enters the transaction id. The page shows clearly how much goes to whom and to which address.
+
 ## 6. Checklist
 
 - [x] Script, address, descriptor checksum, PSBT parse and release checks (`osclass-escrow/tests/ContractTest.php`).
@@ -79,6 +101,7 @@ These commands were written from the Bitcoin Core RPC reference and MUST be veri
 - [ ] End-to-end test with two node wallets on regtest or testnet: release, refund after `T1`, claim after `T2`.
 - [ ] Verify the console commands in section 5 against the Elektron Net node, starting with `getdescriptorinfo` (must report `issane` true) and `deriveaddresses` for a deal's public descriptor.
 - [ ] Regenerate locale files for the new strings.
+- [ ] End-to-end test of the arbiter path with three wallets: dispute, ruling for each side, second signature and broadcast.
 
 ## 7. Open Questions
 
