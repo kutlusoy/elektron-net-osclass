@@ -33,6 +33,40 @@ $path = [
 ];
 $position = array_search($status, $path, true);
 
+$statusOrder = [
+    DealStatus::AWAITING_PAYMENT => 0, DealStatus::CONFIRMING => 1, DealStatus::FUNDED => 2, DealStatus::SHIPPED => 3,
+    DealStatus::AWAITING_SELLER_RELEASE => 4, DealStatus::AWAITING_BUYER_RELEASE => 5,
+];
+$stage = $statusOrder[$status] ?? 6;
+$prepareLabel = __('Prepare your wallet for this deal (once, before you sign)', ELEKTRON_ESCROW_DOMAIN);
+$checklist = $isBuyer ? [
+    ['pay', __('Pay the escrow address with the QR code', ELEKTRON_ESCROW_DOMAIN), $stage >= 1],
+    ['prepare', $prepareLabel, false],
+    ['receive', __('Confirm receipt of the goods', ELEKTRON_ESCROW_DOMAIN), $stage >= 4],
+    ['release', __('Check the seller\'s release, sign it and send it', ELEKTRON_ESCROW_DOMAIN), $stage >= 6],
+] : [
+    ['prepare', $prepareLabel, false],
+    ['ship', __('Ship the goods once the payment is confirmed, then confirm shipping', ELEKTRON_ESCROW_DOMAIN), $stage >= 3],
+    ['release', __('Create and sign the release transaction', ELEKTRON_ESCROW_DOMAIN), $stage >= 5],
+];
+$currentKey = [
+    DealStatus::AWAITING_PAYMENT => $isBuyer ? 'pay' : 'prepare',
+    DealStatus::CONFIRMING => 'prepare',
+    DealStatus::FUNDED => $isBuyer ? 'prepare' : 'ship',
+    DealStatus::SHIPPED => $isBuyer ? 'receive' : 'prepare',
+    DealStatus::AWAITING_SELLER_RELEASE => $isBuyer ? 'prepare' : 'release',
+    DealStatus::AWAITING_BUYER_RELEASE => $isBuyer ? 'release' : 'prepare',
+][$status] ?? null;
+$stepNumber = function (string $key) use ($checklist): int {
+    foreach ($checklist as $index => $step) {
+        if ($step[0] === $key) {
+            return $index + 1;
+        }
+    }
+
+    return 0;
+};
+
 $publicDescriptor = null;
 $descriptorTemplate = null;
 if ($deal['witness_script_hex'] !== null) {
@@ -111,6 +145,11 @@ elektron_escrow_table_style();
     .elektron-escrow-panel { border: 1px solid #ddd; border-radius: 4px; padding: 6px 14px; margin: 1em 0; }
     .elektron-escrow-order textarea { width: 100%; box-sizing: border-box; }
     .elektron-escrow-order details { margin: 0.5em 0; }
+    .elektron-escrow-todo { margin: 1em 0; padding-left: 1.6em; }
+    .elektron-escrow-todo li { padding: 3px 0; }
+    .elektron-escrow-todo li.done { color: #2a7a2a; text-decoration: line-through; }
+    .elektron-escrow-todo li.current { font-weight: bold; }
+    .elektron-escrow-required { background: #b00020; color: #fff; border-radius: 3px; padding: 0 6px; font-size: 0.8em; font-weight: normal; text-decoration: none; display: inline-block; }
     .elektron-escrow-events { list-style: none; padding: 0; }
     .elektron-escrow-events li { padding: 4px 0; border-bottom: 1px solid #eee; }
 </style>
@@ -166,6 +205,15 @@ elektron_escrow_table_style();
 
     <div class="elektron-escrow-next"><strong><?php _e('Next step', ELEKTRON_ESCROW_DOMAIN); ?>:</strong> <?php echo osc_esc_html(elektron_escrow_next_step($deal, $role)); ?></div>
 
+    <?php if (!DealStatus::isTerminal($status)) { ?>
+        <p><strong><?php _e('Your steps. Every step is required, in this order:', ELEKTRON_ESCROW_DOMAIN); ?></strong></p>
+        <ol class="elektron-escrow-todo">
+            <?php foreach ($checklist as $step) { ?>
+                <li class="<?php echo $step[2] ? 'done' : ($step[0] === $currentKey ? 'current' : ''); ?>"><?php echo osc_esc_html($step[1]); ?> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span></li>
+            <?php } ?>
+        </ol>
+    <?php } ?>
+
     <?php if ($deal['escrow_address'] !== null) { ?>
         <div class="elektron-escrow-panel">
             <p><strong><?php _e('Escrow address', ELEKTRON_ESCROW_DOMAIN); ?></strong><?php echo $help('escrow'); ?></p>
@@ -184,7 +232,7 @@ elektron_escrow_table_style();
 
     <?php if ($deal['escrow_address'] !== null && !DealStatus::isTerminal($status) && $descriptorTemplate !== null) { ?>
         <details class="elektron-escrow-panel">
-            <summary><strong><?php _e('Prepare your wallet for this deal (once, before you sign)', ELEKTRON_ESCROW_DOMAIN); ?></strong><?php echo $help('check_address'); ?></summary>
+            <summary><strong><?php echo $stepNumber('prepare'); ?>. <?php echo osc_esc_html($prepareLabel); ?></strong> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php echo $help('check_address'); ?></summary>
             <?php echo $why(__('Why: your wallet needs to know this escrow and the keys it uses for it. The keys come from your connected wallet, so you only paste one value. Your wallet also recalculates the address, so you do not have to trust this page.', ELEKTRON_ESCROW_DOMAIN)); ?>
             <?php $consoleHelp(__('Commands for the node wallet console', ELEKTRON_ESCROW_DOMAIN), [
                 '<strong>' . osc_esc_html(__('1. Get your wallet key', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('private_key') . '<br />' . osc_esc_html(__('Only on your own computer, never show the result to anyone, this site never asks for it. Run the first command, find the entry whose "desc" starts with wpkh( and ends with /0/*#... and copy the part that starts with xprv and ends before /84h (the long text). Wherever <XPRV> appears below, replace it with that text. The backup of this key is your wallet seed, not this page.', ELEKTRON_ESCROW_DOMAIN)) . $code('listdescriptors true'),
@@ -197,6 +245,9 @@ elektron_escrow_table_style();
 
     <?php if ($myTurn) { ?>
         <div class="elektron-escrow-panel">
+        <?php if ($currentKey !== null && $stepNumber($currentKey) > 0) { ?>
+            <h3><?php printf(osc_esc_html(__('Step %d', ELEKTRON_ESCROW_DOMAIN)), $stepNumber($currentKey)); ?>: <?php echo osc_esc_html($checklist[$stepNumber($currentKey) - 1][1]); ?> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span></h3>
+        <?php } ?>
         <?php switch ($status) {
             case DealStatus::AWAITING_PAYMENT:
                 if (empty($deal['escrow_address'])) {
@@ -209,7 +260,7 @@ elektron_escrow_table_style();
                 echo elektron_escrow_qr_image($paymentUri, $paymentUri);
                 echo '<p><a class="btn btn-primary" href="' . osc_esc_html($paymentUri) . '">' . osc_esc_html(__('Open in my wallet', ELEKTRON_ESCROW_DOMAIN)) . '</a></p>';
                 echo $code($deal['escrow_address']);
-                echo '<p>' . osc_esc_html(__('Scan the QR code with your wallet and pay the full amount in one transaction. This page watches the block explorer and moves on by itself, you do not need to do anything else.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
+                echo '<p>' . osc_esc_html(__('Scan the QR code with your wallet and pay the full amount in one transaction. This page checks the block explorer whenever you open or reload it, and the status moves on by itself. You can also press "Check the chain now".', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
                 break;
 
             case DealStatus::FUNDED:
@@ -270,9 +321,6 @@ elektron_escrow_table_style();
     <?php if (in_array($status, [DealStatus::AWAITING_PAYMENT, DealStatus::CONFIRMING, DealStatus::AWAITING_SELLER_RELEASE], true)) { ?>
         <?php elektron_escrow_action_form($deal, 'check_chain', __('Check the chain now', ELEKTRON_ESCROW_DOMAIN)); ?>
         <p class="text-muted"><?php printf(osc_esc_html(__('The payment needs %d confirmations.', ELEKTRON_ESCROW_DOMAIN)), $requiredConfirmations); ?><?php echo $help('confirmations'); ?></p>
-        <?php if (in_array($status, [DealStatus::AWAITING_PAYMENT, DealStatus::CONFIRMING], true)) { ?>
-            <script>setTimeout(function () { window.location.href = window.location.href; }, 30000);</script>
-        <?php } ?>
     <?php } ?>
 
     <?php if ($showShipping) { ?>
