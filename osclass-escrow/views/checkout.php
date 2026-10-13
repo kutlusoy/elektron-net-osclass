@@ -29,11 +29,11 @@ elektron_escrow_table_style();
     <p><?php _e('After you confirm, the order page shows a payment QR code. Your connected wallet provides the keys, your own wallet creates every signature, and this site never holds a key. The payment is held in an escrow between you and the seller.', ELEKTRON_ESCROW_DOMAIN); ?></p>
 
     <p><?php printf(
-        __('If you do not confirm receipt, the seller can automatically claim the funds %d days after your payment is confirmed.', ELEKTRON_ESCROW_DOMAIN),
+        __('The seller can take the funds %d days after you start this purchase, with a transaction from their own wallet, if you neither released nor reclaimed them by then.', ELEKTRON_ESCROW_DOMAIN),
         $timeoutPolicy->sellerReleaseDays()
     ); ?></p>
     <p><?php printf(
-        __('If the seller never responds, you can automatically reclaim the funds %d days after your payment is confirmed.', ELEKTRON_ESCROW_DOMAIN),
+        __('You can reclaim the funds %d days after you start this purchase, with a transaction from your own wallet, if the deal was not completed. The dates are fixed in the escrow address and cannot change.', ELEKTRON_ESCROW_DOMAIN),
         $timeoutPolicy->buyerRefundDays()
     ); ?></p>
 
