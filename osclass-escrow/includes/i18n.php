@@ -152,6 +152,6 @@ function elektron_escrow_howto(string $what): string
 function elektron_escrow_where_console(): string
 {
     return '<p class="elektron-escrow-why"><strong>' . osc_esc_html(__('Where do I type this?', ELEKTRON_ESCROW_DOMAIN)) . '</strong> '
-        . osc_esc_html(__('In the Elektron Net node wallet, open the menu Window, then Console. Choose your wallet in the dropdown at the top of the console. Paste the whole command including the quotation marks into the input line at the bottom and press Enter. Electrum has no such console. It can pay, but it cannot check or sign this escrow.', ELEKTRON_ESCROW_DOMAIN))
+        . osc_esc_html(__('In the Elektron Net node wallet open the menu Window, then Console. Paste the whole command, including all quotation marks, into the input line at the bottom and press Enter.', ELEKTRON_ESCROW_DOMAIN))
         . '</p>';
 }
