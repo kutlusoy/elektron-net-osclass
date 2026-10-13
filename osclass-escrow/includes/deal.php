@@ -4,6 +4,7 @@ use ElektronNet\Escrow\DealException;
 use ElektronNet\Escrow\DealStatus;
 use ElektronNet\Escrow\DealWorkflow;
 use ElektronNet\Escrow\NetworkParams;
+use ElektronNet\Escrow\PsbtBuilder;
 
 function elektron_escrow_network_params(): NetworkParams
 {
@@ -190,4 +191,42 @@ function elektron_escrow_explorer_url(string $kind, string $value): ?string
     }
 
     return $base . '/' . $kind . '/' . rawurlencode($value);
+}
+
+/**
+ * An unsigned PSBT for the escrow outputs, built for the party whose
+ * path it is. Nothing is stored. $kind is 'release', 'refund' or 'claim'.
+ *
+ * @throws DealException with a message safe to show to the user
+ */
+function elektron_escrow_deal_build_psbt(array $deal, int $userId, string $kind, string $address, int $feeRate): string
+{
+    $role = elektron_escrow_deal_role($deal, $userId);
+    $now = time();
+    $rules = [
+        'release' => ['seller', [DealStatus::AWAITING_SELLER_RELEASE], 0],
+        'refund' => ['buyer', DealStatus::FUNDS_AT_RISK, (int) $deal['buyer_refund_locktime']],
+        'claim' => ['seller', DealStatus::FUNDS_AT_RISK, (int) $deal['seller_release_locktime']],
+    ];
+    if (!isset($rules[$kind]) || $role !== $rules[$kind][0] || !in_array($deal['status'], $rules[$kind][1], true)) {
+        throw new DealException('This step is not available at the moment.');
+    }
+    $locktime = $rules[$kind][2];
+    if ($kind !== 'release' && $now < $locktime) {
+        throw new DealException($kind === 'refund' ? 'The refund time has not been reached yet.' : 'The claim time has not been reached yet.');
+    }
+
+    $deal = elektron_escrow_deal_refresh_funding($deal);
+    try {
+        return PsbtBuilder::buildSpend(
+            $deal['witness_script_hex'],
+            elektron_escrow_deal_funding_list($deal),
+            $address,
+            $feeRate,
+            $locktime,
+            elektron_escrow_network_params()
+        );
+    } catch (\InvalidArgumentException $e) {
+        throw new DealException($e->getMessage());
+    }
 }

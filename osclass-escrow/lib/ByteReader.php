@@ -69,6 +69,11 @@ final class ByteReader
         return $this->offset === strlen($this->data);
     }
 
+    public static function varIntLength(int $value): int
+    {
+        return strlen(self::encodeVarInt($value));
+    }
+
     public static function encodeVarInt(int $value): string
     {
         if ($value < 0xfd) {

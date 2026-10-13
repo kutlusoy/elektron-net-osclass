@@ -10,6 +10,7 @@ use ElektronNet\Escrow\Descriptor;
 use ElektronNet\Escrow\EscrowScript;
 use ElektronNet\Escrow\NetworkParams;
 use ElektronNet\Escrow\Psbt;
+use ElektronNet\Escrow\PsbtBuilder;
 use ElektronNet\Escrow\PsbtVerifier;
 use ElektronNet\Escrow\PubKey;
 use ElektronNet\Escrow\RawTransaction;
@@ -102,6 +103,21 @@ check('timestamp locktime rejected', throws(function () use ($script, $funding, 
 check('wrong witness script rejected', throws(function () use ($script, $funding, $expected, $G, $G2, $G3, $G4, $payout, $T1, $T2) {
     PsbtVerifier::assertReleasePsbt(withSignature(makePsbt(EscrowScript::witnessScriptHex($G, $G2, $G4, $G3, $T1, $T2), $funding, $payout, 998600), $G), $expected);
 }, RuntimeException::class));
+
+// Built PSBT
+$builtB64 = PsbtBuilder::buildSpend($script, $funding, 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', 10, 0, $testnet);
+$built = Psbt::parse($builtB64);
+$builtReport = PsbtVerifier::inspect($built, $testnet);
+check('built psbt pays the address minus the fee', $builtReport['outputs'][0]['address'] === 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx' && $builtReport['feeLep'] > 0 && $builtReport['feeLep'] < 5000);
+check('built psbt passes the release check once signed', PsbtVerifier::assertReleasePsbt(withSignature($built, $G), $expected)['feeLep'] === $builtReport['feeLep']);
+$exit = Psbt::parse(PsbtBuilder::buildSpend($script, $funding, 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', 10, $T1, $testnet));
+check('exit psbt carries the lock time and a non-final sequence', $exit->tx()->locktime() === $T1 && $exit->tx()->inputs()[0]['sequence'] === 0xfffffffe);
+check('built psbt rejects a bad address', throws(function () use ($script, $funding, $testnet) { PsbtBuilder::buildSpend($script, $funding, 'nope', 10, 0, $testnet); }, InvalidArgumentException::class));
+check('built psbt rejects a missing fee rate', throws(function () use ($script, $funding, $testnet) { PsbtBuilder::buildSpend($script, $funding, 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', 0, 0, $testnet); }, InvalidArgumentException::class));
+check('built psbt rejects a fee that eats the amount', throws(function () use ($script, $testnet) {
+    PsbtBuilder::buildSpend($script, [['txid' => str_repeat('ab', 32), 'vout' => 0, 'amountLep' => 5000]], 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', 100, 0, $testnet);
+}, InvalidArgumentException::class));
+check('built psbt needs outputs', throws(function () use ($script, $testnet) { PsbtBuilder::buildSpend($script, [], 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', 10, 0, $testnet); }, InvalidArgumentException::class));
 
 // Raw transaction parsing
 $spk = hex2bin(EscrowScript::scriptPubKeyHex($script));

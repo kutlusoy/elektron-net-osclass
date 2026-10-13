@@ -104,6 +104,7 @@ function elektron_escrow_help_text(string $key): string
         'finalize' => __('Turns the transaction with both signatures into the final form the network accepts.', ELEKTRON_ESCROW_DOMAIN),
         'broadcast' => __('Sends the finished transaction to the network. Only after this does money actually move.', ELEKTRON_ESCROW_DOMAIN),
         'txid' => __('The unique id of a transaction. Your wallet shows it after broadcasting. Others can look it up in a block explorer.', ELEKTRON_ESCROW_DOMAIN),
+        'fee_rate' => __('How much you pay the network for the transaction, in lep per byte. 10 is a normal value. Check the block explorer for current fees. The fee is taken from the amount you receive.', ELEKTRON_ESCROW_DOMAIN),
         'payout' => __('An address of your own wallet that should receive the money. Open "How do I get this?" below the field to see where your wallet shows it.', ELEKTRON_ESCROW_DOMAIN),
         'payout_optional' => __('Optional. If you give your two public keys and a payout address here, buyers do not have to wait for you to enter them and the deal is shorter. You can still change the payout address when you create the release.', ELEKTRON_ESCROW_DOMAIN),
         'buyer_key_optional' => __('Optional. If you give your two public keys now, the escrow address is ready as soon as the seller has keys too. You can also add it later on the order page.', ELEKTRON_ESCROW_DOMAIN),
@@ -146,7 +147,7 @@ function elektron_escrow_howto(string $what): string
             . elektron_escrow_where_console()
             . '<p>' . osc_esc_html(__('You need two different keys, a main key and an exit key. Run the first line twice to get two fresh addresses, then the second line for each of them:', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
             . $code('getnewaddress "escrow" bech32') . $code('getaddressinfo "<that address>"')
-            . '<p>' . osc_esc_html(__('Each public key is the 66 character value in the field "pubkey" (or inside "desc"). The matching private keys stay in this wallet and are used later for signing.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
+            . '<p>' . osc_esc_html(__('Each public key is the 66 character value in the field "pubkey" (or inside "desc"). Note the last number of "hdkeypath" for each address. The matching private keys stay in this wallet and are used later for signing.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
             . '<p><strong>' . osc_esc_html(__('Electrum', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'
             . '<p>' . osc_esc_html(__('Take two different unused addresses: open the Addresses tab (View menu, Show Addresses), right-click an address and choose "Details". The public key is listed there. Electrum can neither check this escrow address nor sign for it, so you also need the matching private keys in the node wallet: right-click the address, choose "Private key", enter your password and copy the key without the leading "p2wpkh:". Never paste it into this website.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
             . '<p><strong>' . osc_esc_html(__('Other wallets', ELEKTRON_ESCROW_DOMAIN)) . '</strong></p>'

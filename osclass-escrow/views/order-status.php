@@ -7,6 +7,7 @@
 /** @var array[] $events */
 /** @var string|null $statusMessage */
 /** @var string|null $errorMessage */
+/** @var array{kind:string,psbt:string}|null $built */
 
 use ElektronNet\Escrow\DealStatus;
 use ElektronNet\Escrow\Descriptor;
@@ -81,6 +82,27 @@ $code = function (string $text): string {
 };
 $why = function (string $text): string {
     return '<p class="elektron-escrow-why">' . osc_esc_html($text) . '</p>';
+};
+
+$psbtHelper = function (string $kind, string $defaultAddress) use ($deal, $dealId, $built, $why, $help): void {
+    $titles = [
+        'release' => __('Create the release PSBT for me', ELEKTRON_ESCROW_DOMAIN),
+        'refund' => __('Create the refund PSBT for me', ELEKTRON_ESCROW_DOMAIN),
+        'claim' => __('Create the claim PSBT for me', ELEKTRON_ESCROW_DOMAIN),
+    ];
+    echo '<h4>' . osc_esc_html(__('Option 1: let this page create the PSBT', ELEKTRON_ESCROW_DOMAIN)) . $help('psbt') . '</h4>';
+    echo $why(__('You get an unsigned transaction that you load into your wallet. Your wallet shows what it signs. Check the address and the amount there before you sign.', ELEKTRON_ESCROW_DOMAIN));
+    elektron_escrow_action_form($deal, 'build_' . $kind . '_psbt', $titles[$kind], [
+        'address' => ['label' => __('Address of your own wallet that receives the money', ELEKTRON_ESCROW_DOMAIN), 'help' => 'payout', 'value' => $defaultAddress],
+        'fee_rate' => ['label' => __('Fee rate (lep per byte)', ELEKTRON_ESCROW_DOMAIN), 'help' => 'fee_rate', 'value' => '10'],
+    ]);
+    if ($built !== null && $built['kind'] === $kind) {
+        elektron_escrow_copy_block(__('Unsigned PSBT', ELEKTRON_ESCROW_DOMAIN), $built['psbt'], 'elektron-escrow-built-' . $dealId, $kind . '-' . $dealId . '.psbt', 'psbt');
+        echo '<details><summary>' . osc_esc_html(__('How do I sign it in the node wallet window?', ELEKTRON_ESCROW_DOMAIN)) . '</summary>'
+            . '<p>' . osc_esc_html(__('Copy the PSBT, then in the node wallet use the menu File, "Load PSBT from clipboard" (or "from file" with the downloaded file). A PSBT window opens. Check the output and the amount, then click "Sign Tx". Afterwards "Copy to clipboard" gives you the signed PSBT. Menu names can differ slightly between versions.', ELEKTRON_ESCROW_DOMAIN)) . '</p>'
+            . '</details>';
+    }
+    echo '<h4>' . osc_esc_html(__('Option 2: commands in the console', ELEKTRON_ESCROW_DOMAIN)) . '</h4>';
 };
 
 elektron_escrow_table_style();
@@ -171,7 +193,9 @@ elektron_escrow_table_style();
             <?php echo $why(__('Why: your wallet calculates the address on its own, so you do not have to trust this page. Preparing it now means you can sign later without delay.', ELEKTRON_ESCROW_DOMAIN)); ?>
             <?php $consoleHelp(__('Commands for the node wallet console', ELEKTRON_ESCROW_DOMAIN), [
                 '<strong>' . osc_esc_html(__('1. Check the address', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('Copy the whole line below, including the quotation marks, paste it into the console and press Enter. It must print exactly the escrow address shown above:', ELEKTRON_ESCROW_DOMAIN)) . $code('deriveaddresses "' . $publicDescriptor . '"'),
-                '<strong>' . osc_esc_html(__('2. Prepare signing', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('private_key') . '<br />' . osc_esc_html(__('Replace <YOUR_PRIVATE_KEY_1> by the private key that belongs to your main public key and <YOUR_PRIVATE_KEY_2> by the one that belongs to your exit public key (WIF keys, or keys from "listdescriptors true" written as [fingerprint/path]xprv.../0/N). Then add the checksum and import it into the wallet you sign with:', ELEKTRON_ESCROW_DOMAIN)) . $code('getdescriptorinfo "' . $descriptorTemplate . '"') . $code('importdescriptors \'[{"desc":"<descriptor from getdescriptorinfo>","timestamp":"now"}]\''),
+                '<strong>' . osc_esc_html(__('2. Write your private keys into the descriptor', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('private_key') . '<br />' . osc_esc_html(__('Your wallet must know the escrow script together with your two private keys. Do this for each of your two public keys: run "listdescriptors true" and copy the key part of your receiving descriptor, the text inside wpkh(...), which looks like [fingerprint/84h/0h/0h]xprv.../0/*. Run getaddressinfo for the address that belongs to the public key and take the last number of "hdkeypath" (call it N). Replace the * by N. The result is your private key expression. Put it in the descriptor below instead of <YOUR_PRIVATE_KEY_1> (main key) and <YOUR_PRIVATE_KEY_2> (exit key).', ELEKTRON_ESCROW_DOMAIN)) . $code('getdescriptorinfo "' . $descriptorTemplate . '"'),
+                '<strong>' . osc_esc_html(__('3. Import it', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('Use the descriptor that getdescriptorinfo returns in the field "descriptor". If the payment is not made yet, "now" is fine. If it is already confirmed, use 0 instead of "now" so the wallet finds it (this rescans and can take a while). The wallet must be a normal wallet with private keys.', ELEKTRON_ESCROW_DOMAIN)) . $code('importdescriptors \'[{"desc":"<descriptor from getdescriptorinfo>","timestamp":"now"}]\''),
+                '<strong>' . osc_esc_html(__('4. Check that your wallet knows the escrow', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('The result must show "ismine": true and "solvable": true. If it does not, the wallet cannot sign for the escrow and commands such as walletcreatefundedpsbt stop with "Not solvable pre-selected input".', ELEKTRON_ESCROW_DOMAIN)) . $code('getaddressinfo "' . $deal['escrow_address'] . '"'),
             ]); ?>
         </details>
     <?php } ?>
@@ -216,6 +240,7 @@ elektron_escrow_table_style();
                     echo '<p>' . osc_esc_html(__('The payment outputs are not known yet. Use "Check the chain now" below.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
                     break;
                 }
+                $psbtHelper('release', (string) $deal['seller_payout_address']);
                 $consoleHelp(__('How do I create and sign the release? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
                     '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The fee is taken from the amount. "fee_rate" is the fee in lep per virtual byte; 10 is a normal value, check the block explorer for current fees and change it if needed. Without it the wallet may stop with "Fee estimation failed".', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', 0, null)),
                     '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),
@@ -277,6 +302,7 @@ elektron_escrow_table_style();
                     : __('If the buyer neither confirms nor refunds, you can claim the funds yourself from %s, with a transaction from your own wallet. Nothing needs to be prepared now.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html(date('Y-m-d H:i T', $exitLocktime))); ?></p>
             <?php } else { ?>
                 <p><?php _e('The date has passed. Create the transaction in your wallet, broadcast it, and enter its transaction id.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+                <?php $psbtHelper($isBuyer ? 'refund' : 'claim', $isBuyer ? '' : (string) $deal['seller_payout_address']); ?>
                 <?php $consoleHelp(__('How do I do this? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
                     '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The number before the options is the locked time. "fee_rate" is the fee in lep per virtual byte; 10 is a normal value, check the block explorer for current fees and change it if needed.', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', $exitLocktime, 4294967294)),
                     '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),

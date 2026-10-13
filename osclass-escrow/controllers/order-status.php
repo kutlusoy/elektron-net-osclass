@@ -35,6 +35,7 @@ if (!$deal || elektron_escrow_deal_role($deal, $userId) === null) {
 
 $statusMessage = null;
 $errorMessage = null;
+$built = null;
 $action = (string) Params::getParam('deal_action');
 
 if ($action !== '') {
@@ -51,6 +52,15 @@ if ($action !== '') {
         $statusMessage = $deal['status'] === $before
             ? __('No change on the chain yet.', ELEKTRON_ESCROW_DOMAIN)
             : __('Status updated from the chain.', ELEKTRON_ESCROW_DOMAIN);
+    } elseif (in_array($action, ['build_release_psbt', 'build_refund_psbt', 'build_claim_psbt'], true)) {
+        $kind = substr($action, 6, -5);
+        try {
+            $psbt = elektron_escrow_deal_build_psbt($deal, $userId, $kind, trim((string) Params::getParam('address', false, false)), (int) Params::getParam('fee_rate'));
+            $built = ['kind' => $kind, 'psbt' => $psbt];
+            $statusMessage = __('The PSBT was created. Load it into your wallet, check it there and sign it.', ELEKTRON_ESCROW_DOMAIN);
+        } catch (DealException $e) {
+            $errorMessage = __($e->getMessage(), ELEKTRON_ESCROW_DOMAIN);
+        }
     } else {
         $input = [];
         foreach (['pubkey', 'exit_pubkey', 'address', 'psbt', 'txid'] as $field) {
@@ -67,4 +77,4 @@ if ($action !== '') {
     $deal = elektron_escrow_deal_check_chain($deal);
 }
 
-elektron_escrow_render_order_status($deal, $userId, $statusMessage, $errorMessage);
+elektron_escrow_render_order_status($deal, $userId, $statusMessage, $errorMessage, $built);
