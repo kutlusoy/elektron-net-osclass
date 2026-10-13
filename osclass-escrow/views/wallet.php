@@ -42,10 +42,11 @@ elektron_escrow_table_style();
             <li><?php _e('Open the Elektron Net node wallet, menu Window, then Console. Choose your wallet in the dropdown at the top.', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('console'); ?></li>
             <li><?php _e('Type the command below and press Enter. Do not add "private": that would show the private key.', ELEKTRON_ESCROW_DOMAIN); ?>
                 <code class="elektron-escrow-code">gethdkeys '{"active_only":true}'</code></li>
-            <li><?php _e('Select the whole result, copy it and paste it here.', ELEKTRON_ESCROW_DOMAIN); ?></li>
+            <li><?php _e('The result looks like the example below. Select all of it, copy it and paste it into the field "Paste here" below. It contains only public keys.', ELEKTRON_ESCROW_DOMAIN); ?>
+                <?php echo elektron_escrow_result_block('<COPY_ALL> = everything from the first [ to the last ]:' . "\n" . '[{"xpub": "xpub661My...", "has_private": true, "descriptors": [...]}]'); ?></li>
         </ol>
         <p>
-            <label for="wallet_text"><?php _e('Result of gethdkeys', ELEKTRON_ESCROW_DOMAIN); ?></label><br />
+            <label for="wallet_text"><?php _e('Paste here: the whole result of gethdkeys (from [ to ])', ELEKTRON_ESCROW_DOMAIN); ?></label><br />
             <textarea name="wallet_text" id="wallet_text" rows="8" required spellcheck="false" autocomplete="off" style="width:100%;box-sizing:border-box"></textarea>
         </p>
         <p class="elektron-escrow-error" id="elektron-escrow-prv-warning" style="display:none"><?php _e('This text contains a private key. It was removed and nothing was sent. Run the command without "private" and paste that result instead.', ELEKTRON_ESCROW_DOMAIN); ?></p>

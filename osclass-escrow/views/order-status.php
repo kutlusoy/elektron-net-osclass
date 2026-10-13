@@ -113,6 +113,11 @@ $why = function (string $text): string {
     return '<p class="elektron-escrow-why">' . osc_esc_html($text) . '</p>';
 };
 
+$result = 'elektron_escrow_result_block';
+$step = function (string $title, string $text, string $command, ?string $resultText = null, ?string $helpKey = null) use ($code, $result, $help): string {
+    return '<strong>' . osc_esc_html($title) . '</strong>' . ($helpKey !== null ? $help($helpKey) : '') . '<br />' . osc_esc_html($text) . $code($command) . ($resultText !== null ? $result($resultText) : '');
+};
+
 $psbtHelper = function (string $kind, string $defaultAddress) use ($deal, $dealId, $built, $why, $help): void {
     $titles = [
         'release' => __('Create the release PSBT for me', ELEKTRON_ESCROW_DOMAIN),
@@ -142,7 +147,6 @@ elektron_escrow_table_style();
     .elektron-escrow-steps li.done { color: #2a7a2a; border-color: #2a7a2a; }
     .elektron-escrow-steps li.current { background: #fff3cd; border-color: #d4a017; color: #000; font-weight: bold; }
     .elektron-escrow-next { background: #eef6ff; border: 1px solid #9cc4f0; border-radius: 4px; padding: 10px 14px; margin: 1em 0; }
-    .elektron-escrow-panel { border: 1px solid #ddd; border-radius: 4px; padding: 6px 14px; margin: 1em 0; }
     .elektron-escrow-order textarea { width: 100%; box-sizing: border-box; }
     .elektron-escrow-order details { margin: 0.5em 0; }
     .elektron-escrow-todo { margin: 1em 0; padding-left: 1.6em; }
@@ -209,7 +213,7 @@ elektron_escrow_table_style();
         <p><strong><?php _e('Your steps. Every step is required, in this order:', ELEKTRON_ESCROW_DOMAIN); ?></strong></p>
         <ol class="elektron-escrow-todo">
             <?php foreach ($checklist as $step) { ?>
-                <li class="<?php echo $step[2] ? 'done' : ($step[0] === $currentKey ? 'current' : ''); ?>"><?php echo osc_esc_html($step[1]); ?> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span></li>
+                <li class="<?php echo $step[2] ? 'done' : ($step[0] === $currentKey ? 'current' : ''); ?>"><?php echo osc_esc_html($step[1]); ?> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php if ($step[2]) { ?> <span class="elektron-escrow-done"><?php _e('Done', ELEKTRON_ESCROW_DOMAIN); ?></span><?php } ?></li>
             <?php } ?>
         </ol>
     <?php } ?>
@@ -232,13 +236,13 @@ elektron_escrow_table_style();
 
     <?php if ($deal['escrow_address'] !== null && !DealStatus::isTerminal($status) && $descriptorTemplate !== null) { ?>
         <details class="elektron-escrow-panel"<?php echo $prepared ? '' : ' open'; ?>>
-            <summary><strong><?php echo $stepNumber('prepare'); ?>. <?php echo osc_esc_html($prepareLabel); ?></strong> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php echo $help('check_address'); ?></summary>
+            <summary><strong><?php echo $stepNumber('prepare'); ?>. <?php echo osc_esc_html($prepareLabel); ?></strong> <span class="elektron-escrow-required"><?php _e('required', ELEKTRON_ESCROW_DOMAIN); ?></span><?php if ($prepared) { ?> <span class="elektron-escrow-done"><?php printf(osc_esc_html(__('Done before, %s', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html(substr((string) $deal[$role . '_prepared_at'], 0, 10))); ?></span><?php } ?><?php echo $help('check_address'); ?></summary>
             <?php if (!empty($ownWallet['s_wallet_name'])) { echo $why(sprintf(__('Choose the wallet "%s" in the dropdown at the top of the console.', ELEKTRON_ESCROW_DOMAIN), $ownWallet['s_wallet_name'])); } ?>
             <?php $consoleHelp(__('Commands for the node wallet console', ELEKTRON_ESCROW_DOMAIN), [
-                '<strong>' . osc_esc_html(__('1. Get your XPRV', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('private_key') . '<br />' . osc_esc_html(__('Run this command. In the result, find the line "xprv": and copy the text between the quotation marks after it. It starts with xprv. This is your XPRV. Keep it for steps 2 and 3 and never show it to anyone.', ELEKTRON_ESCROW_DOMAIN)) . $code("gethdkeys '{\"active_only\":true,\"private\":true}'"),
-                '<strong>' . osc_esc_html(__('2. Get the CHECKSUM', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('In the command below, replace <XPRV> with your XPRV (it appears twice) and run it. In the result, copy the 8 characters after "checksum":. Ignore the line "descriptor":. This is your CHECKSUM. Do not change anything else in the command: the numbers after <XPRV> are fixed by this page and have nothing to do with the coin type of your wallet.', ELEKTRON_ESCROW_DOMAIN)) . $code('getdescriptorinfo "' . $descriptorTemplate . '"'),
-                '<strong>' . osc_esc_html(__('3. Import', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('In the command below, replace <XPRV> with your XPRV (twice) and <CHECKSUM> with your CHECKSUM, then run it. The result must show "success": true. The warning "Not all private keys provided" is normal: the other party\'s keys are not yours. If the payment is already confirmed, write 0 instead of now.', ELEKTRON_ESCROW_DOMAIN)) . $code('importdescriptors \'[{"desc":"' . $descriptorTemplate . '#<CHECKSUM>","timestamp":"now"}]\''),
-                '<strong>' . osc_esc_html(__('4. Check', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('Run this command. The result must show "ismine": true and "solvable": true.', ELEKTRON_ESCROW_DOMAIN)) . $code('getaddressinfo "' . $deal['escrow_address'] . '"'),
+                $step(__('1. Get your wallet key', ELEKTRON_ESCROW_DOMAIN), __('Run this command. Copy the key from the result. Keep it for steps 2 and 3 and never show it to anyone.', ELEKTRON_ESCROW_DOMAIN), "gethdkeys '{\"active_only\":true,\"private\":true}'", '[{"xpub": "xpub661My...", "has_private": true, "xprv": "<COPY_XPRV>", ...}]', 'private_key'),
+                $step(__('2. Get the checksum', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_XPRV> with <COPY_XPRV> from step 1 (it appears twice) and run it. Do not change anything else: the numbers after <PASTE_XPRV> are fixed by this page and have nothing to do with the coin type of your wallet.', ELEKTRON_ESCROW_DOMAIN), 'getdescriptorinfo "' . $descriptorTemplate . '"', '{"descriptor": "(ignore this line)", "checksum": "<COPY_CHECKSUM>", ...}'),
+                $step(__('3. Import', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_XPRV> with <COPY_XPRV> (twice) and <PASTE_CHECKSUM> with <COPY_CHECKSUM> from step 2. If the payment is already confirmed, write 0 instead of now.', ELEKTRON_ESCROW_DOMAIN), 'importdescriptors \'[{"desc":"' . $descriptorTemplate . '#<PASTE_CHECKSUM>","timestamp":"now"}]\'', '[{"success": true, "warnings": ["Not all private keys provided. ..."]}]'),
+                $step(__('4. Check', ELEKTRON_ESCROW_DOMAIN), __('Run this command. The result must show "ismine": true and "solvable": true. The warning "Not all private keys provided" in step 3 is normal: the other party\'s keys are not yours.', ELEKTRON_ESCROW_DOMAIN), 'getaddressinfo "' . $deal['escrow_address'] . '"'),
             ]); ?>
             <?php if ($prepared) { ?>
                 <p class="elektron-escrow-success"><?php printf(osc_esc_html(__('Confirmed on %s. You can come back to these commands at any time.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html((string) $deal[$role . '_prepared_at'])); ?></p>
@@ -299,13 +303,13 @@ elektron_escrow_table_style();
                 }
                 $psbtHelper('release', (string) $deal['seller_payout_address']);
                 $consoleHelp(__('How do I create and sign the release? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
-                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The fee is taken from the amount. "fee_rate" is the fee in lep per virtual byte; 10 is a normal value, check the block explorer for current fees and change it if needed. Without it the wallet may stop with "Fee estimation failed".', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', 0, null)),
-                    '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),
-                    osc_esc_html(__('Paste the "psbt" value of the result below, together with your address.', ELEKTRON_ESCROW_DOMAIN)),
+                    $step(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <YOUR_ADDRESS> with an address of your own wallet and run it. The fee is taken from the amount, 10 is the fee in lep per byte.', ELEKTRON_ESCROW_DOMAIN), $createCommand('<YOUR_ADDRESS>', 0, null), '{"psbt": "<COPY_PSBT_1>", "fee": 0.000016, "changepos": -1}', 'psbt'),
+                    $step(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_PSBT_1> with <COPY_PSBT_1> and run it. "complete": false is correct, the buyer signs last.', ELEKTRON_ESCROW_DOMAIN), 'walletprocesspsbt "<PASTE_PSBT_1>"', '{"psbt": "<COPY_PSBT_2>", "complete": false}', 'sign'),
+                    osc_esc_html(__('3. Paste <COPY_PSBT_2> into the field "Signed release transaction (PSBT)" below and your address into the field above it.', ELEKTRON_ESCROW_DOMAIN)),
                 ]);
                 elektron_escrow_action_form($deal, 'seller_submit_release', __('Submit my signed release', ELEKTRON_ESCROW_DOMAIN), [
-                    'address' => ['label' => __('The address you paid yourself to', ELEKTRON_ESCROW_DOMAIN), 'help' => 'payout', 'value' => (string) $deal['seller_payout_address']],
-                    'psbt' => ['label' => __('Signed release transaction (PSBT)', ELEKTRON_ESCROW_DOMAIN), 'type' => 'textarea', 'help' => 'psbt'],
+                    'address' => ['label' => __('Paste here: the address you used in step 1', ELEKTRON_ESCROW_DOMAIN), 'help' => 'payout', 'value' => (string) $deal['seller_payout_address']],
+                    'psbt' => ['label' => __('Paste here: <COPY_PSBT_2> from step 2 (signed release transaction)', ELEKTRON_ESCROW_DOMAIN), 'type' => 'textarea', 'help' => 'psbt'],
                 ]);
                 echo elektron_escrow_howto('address');
                 break;
@@ -319,14 +323,14 @@ elektron_escrow_table_style();
                     . ' (' . osc_esc_html(__('fee', ELEKTRON_ESCROW_DOMAIN)) . ': ' . osc_esc_html((string) $summary['feeLep']) . ' lep)' . $help('verify') . '</p>';
                 elektron_escrow_copy_block(__('Release transaction signed by the seller (PSBT)', ELEKTRON_ESCROW_DOMAIN), $deal['release_psbt_signed'], 'elektron-escrow-psbt-' . $dealId, 'release-' . $dealId . '.psbt', 'psbt');
                 $consoleHelp(__('How do I check, sign and broadcast it? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
-                    '<strong>' . osc_esc_html(__('1. Look at it in your wallet', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('verify') . $code('decodepsbt "<the PSBT above>"'),
-                    '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<the PSBT above>"'),
-                    '<strong>' . osc_esc_html(__('3. Finish it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('finalize') . $code('finalizepsbt "<psbt from step 2>"'),
-                    '<strong>' . osc_esc_html(__('4. Send it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('broadcast') . $code('sendrawtransaction "<hex from step 3>"'),
-                    osc_esc_html(__('Paste the resulting transaction id below.', ELEKTRON_ESCROW_DOMAIN)),
+                    $step(__('1. Look at it in your wallet', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_SELLER_PSBT> with the text of the box above (button Copy) and run it. Check that the output goes to the address and the amount shown above.', ELEKTRON_ESCROW_DOMAIN), 'decodepsbt "<PASTE_SELLER_PSBT>"', null, 'verify'),
+                    $step(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_SELLER_PSBT> with the same text and run it. Now "complete": true is expected.', ELEKTRON_ESCROW_DOMAIN), 'walletprocesspsbt "<PASTE_SELLER_PSBT>"', '{"psbt": "<COPY_PSBT_2>", "complete": true}', 'sign'),
+                    $step(__('3. Finish it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_PSBT_2> with <COPY_PSBT_2> and run it.', ELEKTRON_ESCROW_DOMAIN), 'finalizepsbt "<PASTE_PSBT_2>"', '{"hex": "<COPY_HEX>", "complete": true}', 'finalize'),
+                    $step(__('4. Send it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_HEX> with <COPY_HEX> and run it. Only now money moves.', ELEKTRON_ESCROW_DOMAIN), 'sendrawtransaction "<PASTE_HEX>"', '<COPY_TXID>', 'broadcast'),
+                    osc_esc_html(__('5. Paste <COPY_TXID> (64 characters) into the field "Transaction id of the release" below.', ELEKTRON_ESCROW_DOMAIN)),
                 ]);
                 elektron_escrow_action_form($deal, 'buyer_mark_released', __('I have broadcast the release', ELEKTRON_ESCROW_DOMAIN), [
-                    'txid' => ['label' => __('Transaction id of the release', ELEKTRON_ESCROW_DOMAIN), 'help' => 'txid'],
+                    'txid' => ['label' => __('Paste here: <COPY_TXID> from step 4', ELEKTRON_ESCROW_DOMAIN), 'help' => 'txid'],
                 ]);
                 break;
         } ?>
@@ -361,13 +365,14 @@ elektron_escrow_table_style();
                 <p><?php _e('The date has passed. Create the transaction in your wallet, broadcast it, and enter its transaction id.', ELEKTRON_ESCROW_DOMAIN); ?></p>
                 <?php $psbtHelper($isBuyer ? 'refund' : 'claim', $isBuyer ? '' : (string) $deal['seller_payout_address']); ?>
                 <?php $consoleHelp(__('How do I do this? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
-                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The number before the options is the locked time. "fee_rate" is the fee in lep per virtual byte; 10 is a normal value, check the block explorer for current fees and change it if needed.', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', $exitLocktime, 4294967294)),
-                    '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),
-                    '<strong>' . osc_esc_html(__('3. Finish it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('finalize') . $code('finalizepsbt "<psbt from step 2>"'),
-                    '<strong>' . osc_esc_html(__('4. Send it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('broadcast') . $code('sendrawtransaction "<hex from step 3>"'),
+                    $step(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <YOUR_ADDRESS> with an address of your own wallet and run it. The number before the options is the locked time, 10 is the fee in lep per byte.', ELEKTRON_ESCROW_DOMAIN), $createCommand('<YOUR_ADDRESS>', $exitLocktime, 4294967294), '{"psbt": "<COPY_PSBT_1>", "fee": 0.000016, "changepos": -1}', 'psbt'),
+                    $step(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_PSBT_1> with <COPY_PSBT_1> and run it.', ELEKTRON_ESCROW_DOMAIN), 'walletprocesspsbt "<PASTE_PSBT_1>"', '{"psbt": "<COPY_PSBT_2>", "complete": true}', 'sign'),
+                    $step(__('3. Finish it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_PSBT_2> with <COPY_PSBT_2> and run it.', ELEKTRON_ESCROW_DOMAIN), 'finalizepsbt "<PASTE_PSBT_2>"', '{"hex": "<COPY_HEX>", "complete": true}', 'finalize'),
+                    $step(__('4. Send it', ELEKTRON_ESCROW_DOMAIN), __('In the command below replace <PASTE_HEX> with <COPY_HEX> and run it.', ELEKTRON_ESCROW_DOMAIN), 'sendrawtransaction "<PASTE_HEX>"', '<COPY_TXID>', 'broadcast'),
+                    osc_esc_html(__('5. Paste <COPY_TXID> (64 characters) into the field "Transaction id" below.', ELEKTRON_ESCROW_DOMAIN)),
                 ]); ?>
                 <?php elektron_escrow_action_form($deal, $isBuyer ? 'buyer_mark_refunded' : 'seller_mark_claimed', $isBuyer ? __('I have broadcast the refund', ELEKTRON_ESCROW_DOMAIN) : __('I have broadcast the claim', ELEKTRON_ESCROW_DOMAIN), [
-                    'txid' => ['label' => __('Transaction id', ELEKTRON_ESCROW_DOMAIN), 'help' => 'txid'],
+                    'txid' => ['label' => __('Paste here: <COPY_TXID> from step 4', ELEKTRON_ESCROW_DOMAIN), 'help' => 'txid'],
                 ]); ?>
             <?php } ?>
         </div>
