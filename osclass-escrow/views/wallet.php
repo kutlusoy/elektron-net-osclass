@@ -26,6 +26,7 @@ elektron_escrow_table_style();
     <?php if ($wallet !== null) { ?>
         <table class="elektron-escrow-table">
             <tr><td><?php _e('Status', ELEKTRON_ESCROW_DOMAIN); ?></td><td><?php _e('Connected', ELEKTRON_ESCROW_DOMAIN); ?></td></tr>
+            <tr><td><?php _e('Wallet name', ELEKTRON_ESCROW_DOMAIN); ?></td><td><?php echo $wallet['s_wallet_name'] ? osc_esc_html($wallet['s_wallet_name']) : osc_esc_html(__('not set', ELEKTRON_ESCROW_DOMAIN)); ?></td></tr>
             <tr><td><?php _e('Wallet id', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('wallet_id'); ?></td><td><code><?php echo osc_esc_html($wallet['s_fingerprint']); ?></code></td></tr>
             <tr><td><?php _e('Payout address', ELEKTRON_ESCROW_DOMAIN); ?><?php echo elektron_escrow_help('payout'); ?></td><td><?php echo $wallet['s_payout_address'] ? '<code>' . osc_esc_html($wallet['s_payout_address']) . '</code>' : osc_esc_html(__('not set', ELEKTRON_ESCROW_DOMAIN)); ?></td></tr>
         </table>
@@ -48,6 +49,11 @@ elektron_escrow_table_style();
             <textarea name="wallet_text" id="wallet_text" rows="8" required spellcheck="false" autocomplete="off" style="width:100%;box-sizing:border-box"></textarea>
         </p>
         <p class="elektron-escrow-error" id="elektron-escrow-prv-warning" style="display:none"><?php _e('This text contains a private key. It was removed and nothing was sent. Run the command without "private" and paste that result instead.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+        <p>
+            <label for="wallet_name"><?php _e('Wallet name (optional)', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('wallet_name'); ?><br />
+            <input type="text" name="wallet_name" id="wallet_name" size="40" maxlength="100" autocomplete="off"
+                   value="<?php echo osc_esc_html($wallet !== null ? (string) $wallet['s_wallet_name'] : ''); ?>" />
+        </p>
         <p>
             <label for="payout_address"><?php _e('Payout address (optional)', ELEKTRON_ESCROW_DOMAIN); ?></label><?php echo elektron_escrow_help('payout'); ?><br />
             <input type="text" name="payout_address" id="payout_address" size="70" maxlength="100" autocomplete="off"

@@ -22,7 +22,7 @@ class EscrowWalletDAO extends DAO
         parent::__construct();
         $this->setTableName('elektron_escrow_wallet');
         $this->setPrimaryKey('fk_i_user_id');
-        $this->setFields(['fk_i_user_id', 's_fingerprint', 's_xpub', 's_payout_address', 'dt_pub_date']);
+        $this->setFields(['fk_i_user_id', 's_fingerprint', 's_wallet_name', 's_xpub', 's_payout_address', 'dt_pub_date']);
     }
 
     public function forUser(int $userId): ?array
@@ -32,9 +32,9 @@ class EscrowWalletDAO extends DAO
         return $row ?: null;
     }
 
-    public function saveForUser(int $userId, string $fingerprint, string $xpub, ?string $payoutAddress): void
+    public function saveForUser(int $userId, string $fingerprint, ?string $walletName, string $xpub, ?string $payoutAddress): void
     {
-        $fields = ['s_fingerprint' => $fingerprint, 's_xpub' => $xpub, 's_payout_address' => $payoutAddress ?: null];
+        $fields = ['s_fingerprint' => $fingerprint, 's_wallet_name' => $walletName ?: null, 's_xpub' => $xpub, 's_payout_address' => $payoutAddress ?: null];
         if ($this->findByPrimaryKey($userId)) {
             $this->updateByPrimaryKey($fields, $userId);
         } else {

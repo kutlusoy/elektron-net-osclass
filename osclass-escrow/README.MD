@@ -140,7 +140,7 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 
 ### `elektron_escrow_wallet`
 
-One row per user who connected a wallet: `fk_i_user_id`, `s_fingerprint` (wallet id), `s_xpub` (the master public key), `s_payout_address` (optional). Public data only. The row is kept while the user has open deals.
+One row per user who connected a wallet: `fk_i_user_id`, `s_fingerprint` (wallet id), `s_wallet_name` (optional, the name in the node software), `s_xpub` (the master public key), `s_payout_address` (optional). Public data only. The row is kept while the user has open deals.
 
 ### `elektron_escrow_deal_event`
 
