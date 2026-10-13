@@ -67,6 +67,9 @@ function elektron_escrow_table_style(): void
         .elektron-escrow-badge { display: inline-block; border-radius: 3px; padding: 2px 10px; font-weight: bold; color: #fff; }
         .elektron-escrow-badge-reserved { background: #b36b00; }
         .elektron-escrow-badge-sold { background: #555; }
+        .elektron-escrow-emergency { display: block; clear: both; border: 2px solid #b00020; border-radius: 4px; padding: 6px 16px; margin: 1.6em 0; }
+        .elektron-escrow-emergency > summary { color: #b00020; cursor: pointer; padding: 4px 0; }
+        .elektron-escrow-dispute { border-color: #b36b00; }
         .elektron-escrow-why { color: #555; font-size: 0.92em; }
         .elektron-escrow-howto { margin: 0.4em 0 1em; }
         .elektron-escrow-table { width: 100%; border-collapse: collapse; margin: 1em 0; }

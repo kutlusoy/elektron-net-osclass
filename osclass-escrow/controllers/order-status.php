@@ -52,7 +52,7 @@ if ($action !== '') {
         $statusMessage = $deal['status'] === $before
             ? __('No change on the chain yet.', ELEKTRON_ESCROW_DOMAIN)
             : __('Status updated from the chain.', ELEKTRON_ESCROW_DOMAIN);
-    } elseif (in_array($action, ['build_release_psbt', 'build_refund_psbt', 'build_claim_psbt'], true)) {
+    } elseif (in_array($action, ['build_release_psbt', 'build_refund_psbt', 'build_claim_psbt', 'build_ruled_psbt'], true)) {
         $kind = substr($action, 6, -5);
         try {
             $psbt = elektron_escrow_deal_build_psbt($deal, $userId, $kind, trim((string) Params::getParam('address', false, false)), (int) Params::getParam('fee_rate'));
@@ -63,7 +63,7 @@ if ($action !== '') {
         }
     } else {
         $input = [];
-        foreach (['address', 'psbt', 'txid', 'confirmed'] as $field) {
+        foreach (['address', 'psbt', 'txid', 'confirmed', 'reason'] as $field) {
             $input[$field] = (string) Params::getParam($field, false, false);
         }
         try {

@@ -99,4 +99,32 @@ check('claim before T2 rejected', rejected(function () use ($flow, $stuck) { $fl
 check('claim after T2', $flow->perform('seller_mark_claimed', $stuck, 'seller', ['txid' => str_repeat('c', 64)], $stuck['seller_release_locktime'])['status'] === DealStatus::CLAIMED);
 check('refund from release stage after T1', $flow->perform('buyer_mark_refunded', array_merge($stuck, ['status' => DealStatus::AWAITING_BUYER_RELEASE]), 'buyer', ['txid' => str_repeat('c', 64)], $stuck['buyer_refund_locktime'])['status'] === DealStatus::REFUNDED);
 
+// Deal with an arbiter: dispute, ruling, the winner's transaction, the arbiter completes it
+$G5 = '022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4';
+$arbDeal = ['amount_lep' => 1000000, 'seller_prepared_at' => '2026-01-01 00:00:00', 'buyer_prepared_at' => '2026-01-01 00:00:00'] + $flow->create($sellerPair, $buyerPair, $now, $G5);
+check('arbiter key stored', $arbDeal['arbiter_pubkey'] === $G5 && $arbDeal['status'] === DealStatus::AWAITING_PAYMENT);
+check('arbiter key must differ', rejected(function () use ($flow, $sellerPair, $buyerPair, $now, $sellerKey) { $flow->create($sellerPair, $buyerPair, $now, $sellerKey); }));
+check('dispute needs a paid deal', rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('open_dispute', $arbDeal, 'buyer', ['reason' => 'x'], $now); }));
+check('no dispute without an arbiter', rejected(function () use ($flow, $deal, $now) { $flow->perform('open_dispute', array_merge($deal, ['status' => DealStatus::SHIPPED]), 'buyer', ['reason' => 'x'], $now); }));
+$arbDeal = array_merge($arbDeal, ['status' => DealStatus::SHIPPED, 'funding_outputs' => json_encode($funding)]);
+check('dispute needs a reason', rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('open_dispute', $arbDeal, 'buyer', ['reason' => ''], $now); }));
+check('arbiter cannot open a dispute', rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('open_dispute', $arbDeal, 'arbiter', ['reason' => 'x'], $now); }));
+step($flow, $arbDeal, 'open_dispute', 'seller', ['reason' => 'Buyer does not release.'], $now);
+check('disputed, arbiter next', $arbDeal['status'] === DealStatus::DISPUTED && $arbDeal['dispute_opened_by'] === 'seller' && DealStatus::mayAct($arbDeal, 'arbiter') && !DealStatus::mayAct($arbDeal, 'buyer'));
+check('parties cannot rule', rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('arbiter_rule', $arbDeal, 'seller', ['ruling' => 'seller', 'note' => 'n'], $now); }));
+check('ruling needs a side and a note', rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('arbiter_rule', $arbDeal, 'arbiter', ['ruling' => 'nobody', 'note' => 'n'], $now); }) && rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('arbiter_rule', $arbDeal, 'arbiter', ['ruling' => 'seller', 'note' => ''], $now); }));
+step($flow, $arbDeal, 'arbiter_rule', 'arbiter', ['ruling' => 'seller', 'note' => 'Delivery confirmed by tracking.'], $now);
+check('ruled for the seller, only the seller acts', $arbDeal['status'] === DealStatus::RULED && DealStatus::mayAct($arbDeal, 'seller') && !DealStatus::mayAct($arbDeal, 'buyer') && !DealStatus::mayAct($arbDeal, 'arbiter'));
+$ruledPsbt = makePsbt($arbDeal['witness_script_hex'], $funding, $payout, 998600);
+check('loser cannot submit', rejected(function () use ($flow, $arbDeal, $ruledPsbt, $buyerKey, $payoutAddress, $now) { $flow->perform('winner_submit_psbt', $arbDeal, 'buyer', ['psbt' => withSignature($ruledPsbt, $buyerKey)->toBase64(), 'address' => $payoutAddress], $now); }));
+check('winner needs the prepared wallet', rejected(function () use ($flow, $arbDeal, $ruledPsbt, $sellerKey, $payoutAddress, $now) { $flow->perform('winner_submit_psbt', array_merge($arbDeal, ['seller_prepared_at' => null]), 'seller', ['psbt' => withSignature($ruledPsbt, $sellerKey)->toBase64(), 'address' => $payoutAddress], $now); }));
+check('winner signature of the other party rejected', rejected(function () use ($flow, $arbDeal, $ruledPsbt, $buyerKey, $payoutAddress, $now) { $flow->perform('winner_submit_psbt', $arbDeal, 'seller', ['psbt' => withSignature($ruledPsbt, $buyerKey)->toBase64(), 'address' => $payoutAddress], $now); }));
+step($flow, $arbDeal, 'winner_submit_psbt', 'seller', ['psbt' => withSignature(withSignature($ruledPsbt, $sellerKey), $sellerExit)->toBase64(), 'address' => $payoutAddress], $now);
+check('arbiter signs next', $arbDeal['status'] === DealStatus::AWAITING_ARBITER_SIGNATURE && $arbDeal['ruling_address'] === $payoutAddress && DealStatus::mayAct($arbDeal, 'arbiter'));
+check('arbiter needs a txid', rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('arbiter_complete', $arbDeal, 'arbiter', ['txid' => 'nope'], $now); }));
+check('parties cannot complete', rejected(function () use ($flow, $arbDeal, $now) { $flow->perform('arbiter_complete', $arbDeal, 'seller', ['txid' => str_repeat('d', 64)], $now); }));
+check('seller ruling ends as released', $flow->perform('arbiter_complete', $arbDeal, 'arbiter', ['txid' => str_repeat('d', 64)], $now)['status'] === DealStatus::RELEASED);
+check('buyer ruling ends as refunded', $flow->perform('arbiter_complete', array_merge($arbDeal, ['ruling' => 'buyer']), 'arbiter', ['txid' => str_repeat('d', 64)], $now)['status'] === DealStatus::REFUNDED);
+check('exits stay available during a dispute', $flow->perform('buyer_mark_refunded', array_merge($arbDeal, ['status' => DealStatus::DISPUTED]), 'buyer', ['txid' => str_repeat('c', 64)], $arbDeal['buyer_refund_locktime'])['status'] === DealStatus::REFUNDED);
+
 finish();

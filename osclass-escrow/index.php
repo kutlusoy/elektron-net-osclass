@@ -32,6 +32,7 @@ Author URI: https://elektron-net.org
     require_once __DIR__ . '/includes/deal.php';     // workflow glue: perform, chain check, explorer links
     require_once __DIR__ . '/includes/mail.php';     // deal update emails
     require_once __DIR__ . '/includes/payment-watcher.php'; // elektron_escrow_check_all_deals()
+    require_once __DIR__ . '/includes/arbiter.php'; // arbiter wallet, keys and decisions
     require_once __DIR__ . '/includes/wallet.php';   // connected wallet: keys per deal, setup commands
     require_once __DIR__ . '/includes/hooks.php';    // item widget, routes, cron
 
@@ -62,6 +63,11 @@ Author URI: https://elektron-net.org
             __('Elektron Net Escrow', ELEKTRON_ESCROW_DOMAIN),
             osc_admin_render_plugin_url('osclass-escrow/admin/settings.php'),
             'elektron_escrow_settings'
+        );
+        osc_admin_menu_plugins(
+            __('Elektron Net Arbiter', ELEKTRON_ESCROW_DOMAIN),
+            osc_admin_render_plugin_url('osclass-escrow/admin/arbiter.php'),
+            'elektron_escrow_arbiter'
         );
     });
 

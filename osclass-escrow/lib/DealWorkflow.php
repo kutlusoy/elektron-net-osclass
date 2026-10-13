@@ -22,11 +22,15 @@ final class DealWorkflow
         'buyer_mark_refunded' => 'buyer',
         'seller_mark_claimed' => 'seller',
         'confirm_prepared' => null,
+        'open_dispute' => null,
+        'arbiter_rule' => 'arbiter',
+        'winner_submit_psbt' => null,
+        'arbiter_complete' => 'arbiter',
         'cancel' => null,
     ];
 
     /** Actions that need the party to have confirmed that their wallet is prepared. */
-    private const NEEDS_PREPARED_WALLET = ['seller_mark_shipped', 'buyer_mark_received', 'seller_submit_release', 'buyer_mark_released'];
+    private const NEEDS_PREPARED_WALLET = ['seller_mark_shipped', 'buyer_mark_received', 'seller_submit_release', 'buyer_mark_released', 'winner_submit_psbt'];
 
     /** @var NetworkParams */
     private $network;
@@ -72,6 +76,19 @@ final class DealWorkflow
                 }
 
                 return [$role . '_prepared_at' => date('Y-m-d H:i:s', $now)];
+            case 'open_dispute':
+                return $this->openDispute($deal, $role, $get('reason'), $now);
+            case 'arbiter_rule':
+                return $this->arbiterRule($deal, $get('ruling'), $get('note'));
+            case 'winner_submit_psbt':
+                return $this->winnerSubmitPsbt($deal, $role, $get('psbt'), $get('address'));
+            case 'arbiter_complete':
+                $this->expect($deal, DealStatus::AWAITING_ARBITER_SIGNATURE);
+
+                return [
+                    'status' => ($deal['ruling'] ?? '') === 'seller' ? DealStatus::RELEASED : DealStatus::REFUNDED,
+                    'closing_txid' => $this->cleanTxid($get('txid')),
+                ];
             case 'seller_mark_shipped':
                 return $this->advance($deal, DealStatus::FUNDED, DealStatus::SHIPPED);
             case 'buyer_mark_received':
@@ -120,12 +137,16 @@ final class DealWorkflow
      *
      * @param array{main:string,exit:string} $sellerKeys
      * @param array{main:string,exit:string} $buyerKeys
+     * @param string|null $arbiterKey public key of the arbiter for this deal, if the deal has one
      * @return array<string,mixed>
      */
-    public function create(array $sellerKeys, array $buyerKeys, int $now): array
+    public function create(array $sellerKeys, array $buyerKeys, int $now, ?string $arbiterKey = null): array
     {
         $seller = $this->cleanKeyPair('seller', $sellerKeys['main'], $sellerKeys['exit']);
         $buyer = $this->cleanKeyPair('buyer', $buyerKeys['main'], $buyerKeys['exit']);
+        if ($arbiterKey !== null) {
+            $arbiterKey = $this->cleanPubKey($arbiterKey);
+        }
         $refundLocktime = $this->timeouts->buyerRefundLocktime($now);
         $claimLocktime = $this->timeouts->sellerReleaseLocktime($now);
         try {
@@ -135,13 +156,15 @@ final class DealWorkflow
                 $buyer['buyer_pubkey'],
                 $buyer['buyer_exit_pubkey'],
                 $refundLocktime,
-                $claimLocktime
+                $claimLocktime,
+                $arbiterKey
             );
         } catch (InvalidArgumentException $e) {
-            throw new DealException('All four public keys must be different. Buyer and seller must not share a wallet.');
+            throw new DealException('All public keys must be different. Buyer, seller and arbiter must not share a wallet.');
         }
 
         return $seller + $buyer + [
+            'arbiter_pubkey' => $arbiterKey,
             'status' => DealStatus::AWAITING_PAYMENT,
             'buyer_refund_locktime' => $refundLocktime,
             'seller_release_locktime' => $claimLocktime,
@@ -180,6 +203,38 @@ final class DealWorkflow
     private function sellerSubmitRelease(array $deal, string $psbtText, string $payoutAddress): array
     {
         $this->expect($deal, DealStatus::AWAITING_SELLER_RELEASE);
+        [$address, $psbt] = $this->verifiedRelease($deal, 'seller', $psbtText, $payoutAddress);
+
+        return [
+            'status' => DealStatus::AWAITING_BUYER_RELEASE,
+            'seller_payout_address' => $address,
+            'release_psbt_signed' => $psbt->toBase64(),
+        ];
+    }
+
+    /**
+     * Takes the transaction the party in the right built and signed after the arbiter's ruling.
+     */
+    private function winnerSubmitPsbt(array $deal, string $role, string $psbtText, string $address): array
+    {
+        $this->expect($deal, DealStatus::RULED);
+        if (($deal['ruling'] ?? null) !== $role) {
+            throw new DealException('This step is not available at the moment.');
+        }
+        [$address, $psbt] = $this->verifiedRelease($deal, $role, $psbtText, $address);
+
+        return [
+            'status' => DealStatus::AWAITING_ARBITER_SIGNATURE,
+            'ruling_address' => $address,
+            'ruling_psbt' => $psbt->toBase64(),
+        ];
+    }
+
+    /**
+     * @return array{0:string,1:Psbt} the payout address and the checked PSBT
+     */
+    private function verifiedRelease(array $deal, string $role, string $psbtText, string $payoutAddress): array
+    {
         $payoutAddress = trim($payoutAddress);
         $payoutScript = Address::toScriptPubKeyHex($payoutAddress, $this->network);
         if ($payoutScript === null) {
@@ -197,8 +252,8 @@ final class DealWorkflow
                 'fundingOutputs' => $funding,
                 'payoutScriptPubKeyHex' => $payoutScript,
                 'allowedPubKeys' => [$deal['seller_pubkey'], $deal['buyer_pubkey']],
-                'signerPubKey' => $deal['seller_pubkey'],
-                'signerExitPubKey' => $deal['seller_exit_pubkey'],
+                'signerPubKey' => $deal[$role . '_pubkey'],
+                'signerExitPubKey' => $deal[$role . '_exit_pubkey'],
             ]);
         } catch (InvalidArgumentException $e) {
             throw new DealException('This is not a valid PSBT: ' . $e->getMessage());
@@ -206,11 +261,46 @@ final class DealWorkflow
             throw new DealException($e->getMessage());
         }
 
+        return [$payoutAddress, $psbt];
+    }
+
+    /**
+     * Either party calls the arbiter. Only possible in a deal that has one, once the payment is confirmed.
+     */
+    private function openDispute(array $deal, string $role, string $reason, int $now): array
+    {
+        if ($role !== 'buyer' && $role !== 'seller') {
+            throw new DealException('This step is not available at the moment.');
+        }
+        if (empty($deal['arbiter_pubkey'])) {
+            throw new DealException('This deal has no arbiter.');
+        }
+        if (!in_array($deal['status'], DealStatus::DISPUTABLE, true)) {
+            throw new DealException('A dispute is possible once the payment is confirmed and while the deal is running.');
+        }
+        if ($reason === '') {
+            throw new DealException('Please describe the problem so that the arbiter can decide.');
+        }
+
         return [
-            'status' => DealStatus::AWAITING_BUYER_RELEASE,
-            'seller_payout_address' => $payoutAddress,
-            'release_psbt_signed' => $psbt->toBase64(),
+            'status' => DealStatus::DISPUTED,
+            'dispute_opened_by' => $role,
+            'dispute_reason' => mb_substr($reason, 0, 2000),
+            'dispute_opened_at' => date('Y-m-d H:i:s', $now),
         ];
+    }
+
+    private function arbiterRule(array $deal, string $ruling, string $note): array
+    {
+        $this->expect($deal, DealStatus::DISPUTED);
+        if ($ruling !== 'buyer' && $ruling !== 'seller') {
+            throw new DealException('Choose who receives the money: the buyer or the seller.');
+        }
+        if ($note === '') {
+            throw new DealException('Please give a short reason for the decision. Both parties see it.');
+        }
+
+        return ['status' => DealStatus::RULED, 'ruling' => $ruling, 'ruling_note' => mb_substr($note, 0, 2000)];
     }
 
     private function advance(array $deal, string $from, string $to): array

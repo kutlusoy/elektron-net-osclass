@@ -23,9 +23,9 @@ function elektron_escrow_deal_role(array $deal, int $userId): ?string
     return null;
 }
 
-function elektron_escrow_workflow(): DealWorkflow
+function elektron_escrow_workflow(bool $withArbiter = false): DealWorkflow
 {
-    return new DealWorkflow(elektron_escrow_network_params(), elektron_escrow_config()->timeoutPolicy());
+    return new DealWorkflow(elektron_escrow_network_params(), $withArbiter ? elektron_escrow_arbiter_timeouts() : elektron_escrow_config()->timeoutPolicy());
 }
 
 /**
@@ -49,7 +49,7 @@ function elektron_escrow_deal_perform(array $deal, string $action, int $userId, 
             throw new DealException('A payment to the escrow address was detected, so this deal can no longer be cancelled.');
         }
     }
-    if ($action === 'seller_submit_release') {
+    if (in_array($action, ['seller_submit_release', 'winner_submit_psbt'], true)) {
         $deal = elektron_escrow_deal_refresh_funding($deal);
     }
 
@@ -207,12 +207,13 @@ function elektron_escrow_deal_build_psbt(array $deal, int $userId, string $kind,
         'release' => ['seller', [DealStatus::AWAITING_SELLER_RELEASE], 0],
         'refund' => ['buyer', DealStatus::FUNDS_AT_RISK, (int) $deal['buyer_refund_locktime']],
         'claim' => ['seller', DealStatus::FUNDS_AT_RISK, (int) $deal['seller_release_locktime']],
+        'ruled' => [(string) ($deal['ruling'] ?? ''), [DealStatus::RULED], 0],
     ];
     if (!isset($rules[$kind]) || $role !== $rules[$kind][0] || !in_array($deal['status'], $rules[$kind][1], true)) {
         throw new DealException('This step is not available at the moment.');
     }
     $locktime = $rules[$kind][2];
-    if ($kind !== 'release' && $now < $locktime) {
+    if (!in_array($kind, ['release', 'ruled'], true) && $now < $locktime) {
         throw new DealException($kind === 'refund' ? 'The refund time has not been reached yet.' : 'The claim time has not been reached yet.');
     }
 
@@ -248,4 +249,9 @@ function elektron_escrow_item_state(int $itemId): array
     $sold = $dao->findSoldByItem($itemId);
 
     return $sold !== null ? ['state' => 'sold', 'deal' => $sold] : ['state' => 'free', 'deal' => null];
+}
+
+function elektron_escrow_deal_explorer_link(array $deal): ?string
+{
+    return empty($deal['escrow_address']) ? null : elektron_escrow_explorer_url('address', $deal['escrow_address']);
 }

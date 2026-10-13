@@ -104,7 +104,7 @@ The resulting zip is what you upload through Osclass's own plugin installer, or 
 | `osc_register_plugin()` | `index.php` | Activation callback, `elektron_escrow_install()` (creates DB tables, seeds preference defaults). |
 | `<plugin_path>_uninstall` | `index.php` | Deactivation callback, `elektron_escrow_uninstall()` (removes preferences, keeps the order table). |
 | `<plugin_path>_configure` | `index.php` | "Configure" action in the admin plugin list, renders `admin/settings.php`. |
-| `admin_menu_init` | `index.php` | Adds a dedicated "Elektron Net Escrow" entry under Admin > Plugins. |
+| `admin_menu_init` | `index.php` | Adds the entries "Elektron Net Escrow" (settings, including the arbiter wallet) and "Elektron Net Arbiter" (cases) under Admin > Plugins. |
 | `item_detail` | `includes/hooks.php` | Injects the availability widget on the item detail page: "Buy with Elektron", "View your order" for the buyer who holds the deal, "Reserved" or "Sold" for everyone else, and for the owner "Offer again" on a sold listing. Receives the current item array. **Not** `show_item`: that hook fires from the item controller's own `doModel()` (data-preparation) method, before the theme emits any page markup at all, so output echoed from it lands ahead of the entire page instead of anywhere inside it; `item_detail` is the hook the theme's own template actually calls at the intended position (confirmed against the real, deployed `osclass-classifieds.com` theme, `oc-content/themes/sigma/item.php`), see "Status". |
 | `user_menu_filter` | `includes/hooks.php` | Adds the "My Elektron orders" and "My Elektron wallet" pages to the logged-in user's account menu, the same mechanism Shopclass's own billing feature uses (`hBilling.php`). |
 | `cron_minutely` | `includes/hooks.php` | The chain watcher, `elektron_escrow_check_all_deals()`: looks up the funding transaction of every deal that is waiting for it (`awaiting_funding_broadcast`, `confirming`). The deal page runs the same check on load. |
@@ -138,6 +138,10 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 | `funding_outputs` | JSON list of the confirmed, unspent outputs at the escrow address. The release PSBT must spend exactly these. |
 | `seller_payout_address`, `release_psbt_signed` | The payout address (default from the seller's wallet connection, final value from the release submission) and the release PSBT carrying the seller's signature, after it passed the checks. |
 | `closing_txid` | Transaction id the party reported when closing the deal. |
+| `arbiter_pubkey` | The arbiter's key for this deal, derived like the parties' keys from the arbiter wallet connected in the settings. Null for deals without arbiter. |
+| `dispute_opened_by`, `dispute_reason`, `dispute_opened_at` | Who called the arbiter, why and when. |
+| `ruling`, `ruling_note` | The arbiter's decision (`buyer` or `seller`) and its reason. |
+| `ruling_address`, `ruling_psbt` | The address and the signed transaction the party in the right submitted after the ruling. |
 | `b_item_relisted` | Set by the owner's "Offer again": the finished sale no longer marks the listing as sold. |
 
 ### `elektron_escrow_wallet`
@@ -205,9 +209,18 @@ The site is a relay and a passive display: it never holds a key, builds a transa
 | `shipped` | buyer | Confirms receipt, refused too close to T1. |
 | `awaiting_seller_release` | seller | Builds and signs the release PSBT in their wallet and submits it with the address it pays (prefilled from the wallet connection). |
 | `awaiting_buyer_release` | buyer | Checks it in their wallet, signs, finalizes, broadcasts and reports the transaction id. |
+| `disputed` | arbiter | Either party called the arbiter (only in a deal with arbiter, from `funded` to `awaiting_buyer_release`). The arbiter decides who receives the money. |
+| `ruled` | party in the right | Creates the transaction that pays them, signs it and submits it. |
+| `awaiting_arbiter_signature` | arbiter | Adds the second signature, sends the transaction and reports its id. The deal ends as `released` (money to the seller) or `refunded` (money to the buyer). |
 | `released`, `refunded`, `claimed`, `cancelled` | | Terminal. Refund (after T1, buyer) and claim (after T2, seller) are available from `confirming` onwards and report the transaction id. |
 
 Before the steps that lead to a signature, each party must tick a confirmation that their wallet is prepared for the deal (`confirm_prepared`, stored as `buyer_prepared_at` / `seller_prepared_at`). Until then shipping, receipt, release and the payment QR code are locked. The preparation commands stay available afterwards. The refund and claim exits are never locked.
+
+### Arbiter
+
+With the arbiter enabled in the settings, new deals use `or_d(multi(2,K1,K2,K3),...)` with the arbiter's key as the third key and later dates (default 45 and 90 days). Any two of the three can spend, the arbiter never alone. The arbiter works on the admin page "Elektron Net Arbiter": the list of cases, one case with history and messages, a decision with two clearly marked buttons (pay the seller, pay the buyer back), then the signing steps, and a chat to both parties (`arbiter_message`, with an email to them). Deals created without an arbiter keep their two-key script and the timeout behaviour. The exits T1 and T2 stay in force as a fallback if the arbiter does not act.
+
+On the deal page "Cancel" and "Call the arbiter" sit in a red "Emergency" box after the history and messages.
 
 Cancelling is possible for both parties until a payment is detected on the chain.
 

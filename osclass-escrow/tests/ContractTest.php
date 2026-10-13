@@ -132,6 +132,12 @@ $raw = $unsigned->serializeWithoutWitness();
 $withWitness = substr($raw, 0, 4) . "\x00\x01" . substr($raw, 4, -4) . "\x02\x01\xaa\x01\xbb" . substr($raw, -4);
 check('txid ignores witness', RawTransaction::fromHex(bin2hex($withWitness))->txid() === $unsigned->txid());
 
+// Escrow with an arbiter: three-key multisig part, script compared with an independent miniscript compiler
+$G5 = '022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4';
+check('arbiter script matches the independent compiler', EscrowScript::witnessScriptHex($G, $G2, $G3, $G4, 1700000000 + 86400 * 45, 1700000000 + 86400 * 75, $G5) === '5221022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817982102f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f953ae7364632102e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13ad0480448f65b1672102c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5ad0480d1b665b16868');
+check('arbiter key must differ from the party keys', throws(function () use ($G, $G2, $G3, $G4) { EscrowScript::witnessScriptHex($G, $G2, $G3, $G4, 1700000000 + 86400 * 45, 1700000000 + 86400 * 75, $G3); }, InvalidArgumentException::class));
+check('descriptor with arbiter lists three keys', substr_count(Descriptor::escrowBody($G, $G2, $G3, $G4, 1700000000 + 86400 * 45, 1700000000 + 86400 * 75, [], $G5), 'multi(2,') === 1 && strpos(Descriptor::escrowBody($G, $G2, $G3, $G4, 1700000000 + 86400 * 45, 1700000000 + 86400 * 75, [], $G5), $G5) !== false);
+
 // Wallet connection
 $masterXpub = 'xpub661MyMwAqRbcFiyme9xRZe855HWfYxvTcYoWpX1E8ZW8DGu35DbthdTxz222XRihFsxrdH4BCEe32DBRyKEerW8CUMAB8FDziiNyDG4ecgT';
 $accountXpub = 'xpub6CUKWm4nWQEwWg7mBiA7PbAyvmzLb1DU898yUE9Zt78iPnFFc2YyodWtwqysPJbkEni56H2xFcZumxKHcmr8qVfAw5bwxq5YGRT97yeLxvC';
