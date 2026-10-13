@@ -9,17 +9,14 @@ use ElektronNet\Escrow\TimeoutPolicy;
  * plugin's README for the full field list.
  */
 
+$statusMessage = null;
+$errorMessage = null;
+
 // The 'save' marker alone decides whether this is a submission; the CSRF
-// token itself is deliberately NOT inspected before calling
-// osc_csrf_check(). See controllers/wallet.php for why: hardcoding
-// Shopclass's own 'CSRFName' token field name here is an assumption about
-// a specific platform's internals that does not hold on every real,
-// deployed Osclass-family platform (confirmed live against one that uses
-// a single 'octoken' field instead).
+// token field name differs between Osclass-family platforms, so it is not inspected here.
 if (Params::getParam('save') === 'elektron_escrow_settings') {
     osc_csrf_check();
 
-    $errorMessage = null;
     try {
         // Validated up front so a bad admin input can never write a policy
         // that reopens either of the two timeout attacks described in the
@@ -47,13 +44,12 @@ if (Params::getParam('save') === 'elektron_escrow_settings') {
         foreach ($fields as $name => $value) {
             Preference::newInstance()->replace($name, $value, 'plugin-osclass-escrow', 'STRING');
         }
-        osc_add_flash_ok_message(__('Elektron Net Escrow settings updated', ELEKTRON_ESCROW_DOMAIN), 'admin');
-    } else {
-        osc_add_flash_error_message($errorMessage, 'admin');
+        $statusMessage = __('Elektron Net Escrow settings updated', ELEKTRON_ESCROW_DOMAIN);
     }
-
-    osc_redirect_to(osc_admin_render_plugin_url('osclass-escrow/admin/settings.php'));
-    exit;
 }
+
+// The result is shown in this same response: the admin header is already
+// sent by the time this file runs, so a flash message plus redirect would
+// fail with "headers already sent".
 
 require osc_plugins_path() . 'osclass-escrow/views/admin-settings.php';
