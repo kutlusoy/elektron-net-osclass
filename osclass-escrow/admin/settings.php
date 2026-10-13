@@ -1,6 +1,6 @@
 <?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
 
-use ElektronNet\Payments\Core\Escrow\TimeoutPolicy;
+use ElektronNet\Escrow\TimeoutPolicy;
 
 /**
  * Admin settings page, rendered via osc_admin_render_plugin_url() (see
@@ -38,7 +38,6 @@ if (Params::getParam('save') === 'elektron_escrow_settings') {
             'currency_codes' => Params::getParam('currency_codes'),
             'chain_data_endpoints' => Params::getParam('chain_data_endpoints'),
             'required_confirmations' => (string) (int) Params::getParam('required_confirmations'),
-            'fee_rate_lep_per_vbyte' => (string) (int) Params::getParam('fee_rate_lep_per_vbyte'),
             'buyer_refund_days' => (string) (int) Params::getParam('buyer_refund_days'),
             'seller_release_days' => (string) (int) Params::getParam('seller_release_days'),
         ];

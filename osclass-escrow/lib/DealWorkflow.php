@@ -1,0 +1,294 @@
+<?php
+
+namespace ElektronNet\Escrow;
+
+use InvalidArgumentException;
+use RuntimeException;
+
+/**
+ * The lock-step escrow workflow as pure functions over a deal row: each
+ * method checks that the deal is in the expected status, validates the
+ * submitted data, and returns the column updates to persist. Nothing here
+ * touches a database, the chain, or a wallet. Every transaction is built
+ * and signed in a party's own wallet; this class only checks what comes back.
+ */
+final class DealWorkflow
+{
+    private const ACTION_ROLES = [
+        'seller_submit_key' => 'seller',
+        'buyer_submit_key' => 'buyer',
+        'seller_mark_shipped' => 'seller',
+        'buyer_mark_received' => 'buyer',
+        'seller_submit_release' => 'seller',
+        'buyer_mark_released' => 'buyer',
+        'buyer_mark_refunded' => 'buyer',
+        'seller_mark_claimed' => 'seller',
+        'cancel' => null,
+    ];
+
+    /** @var NetworkParams */
+    private $network;
+
+    /** @var TimeoutPolicy */
+    private $timeouts;
+
+    public function __construct(NetworkParams $network, TimeoutPolicy $timeouts)
+    {
+        $this->network = $network;
+        $this->timeouts = $timeouts;
+    }
+
+    /**
+     * Single entry point for user actions: checks that $role may perform
+     * $action and dispatches it. $input carries the submitted form fields.
+     *
+     * @param string $role 'buyer' or 'seller'
+     * @param array<string,string> $input
+     * @return array<string,mixed> column updates, always including 'status'
+     * @throws DealException
+     */
+    public function perform(string $action, array $deal, string $role, array $input, int $now): array
+    {
+        if (!array_key_exists($action, self::ACTION_ROLES)) {
+            throw new DealException('Unknown action.');
+        }
+        $requiredRole = self::ACTION_ROLES[$action];
+        if ($requiredRole !== null && $requiredRole !== $role) {
+            throw new DealException('This step is not available at the moment.');
+        }
+        $get = function (string $name) use ($input): string {
+            return isset($input[$name]) ? trim((string) $input[$name]) : '';
+        };
+
+        switch ($action) {
+            case 'seller_submit_key':
+                return $this->sellerSubmitKey($deal, $get('pubkey'), $now);
+            case 'buyer_submit_key':
+                return $this->buyerSubmitKey($deal, $get('pubkey'), $now);
+            case 'seller_mark_shipped':
+                return $this->advance($deal, DealStatus::FUNDED, DealStatus::SHIPPED);
+            case 'buyer_mark_received':
+                return $this->buyerMarkReceived($deal, $now);
+            case 'seller_submit_release':
+                return $this->sellerSubmitRelease($deal, $get('psbt'), $get('address'));
+            case 'buyer_mark_released':
+                $this->expect($deal, DealStatus::AWAITING_BUYER_RELEASE);
+
+                return ['status' => DealStatus::RELEASED, 'closing_txid' => $this->cleanTxid($get('txid'))];
+            case 'buyer_mark_refunded':
+                $this->expectFundsAtRisk($deal);
+                $this->expectTimeReached((int) $deal['buyer_refund_locktime'], $now, 'The refund time has not been reached yet.');
+
+                return ['status' => DealStatus::REFUNDED, 'closing_txid' => $this->cleanTxid($get('txid'))];
+            case 'seller_mark_claimed':
+                $this->expectFundsAtRisk($deal);
+                $this->expectTimeReached((int) $deal['seller_release_locktime'], $now, 'The claim time has not been reached yet.');
+
+                return ['status' => DealStatus::CLAIMED, 'closing_txid' => $this->cleanTxid($get('txid'))];
+            default:
+                return $this->cancel($deal);
+        }
+    }
+
+    /**
+     * @return array<string,mixed> updates from the chain, empty if nothing changes
+     */
+    public function advanceFromChain(array $deal, int $receivedLep, int $bestConfirmations, int $requiredConfirmations): array
+    {
+        if (!in_array($deal['status'], [DealStatus::AWAITING_PAYMENT, DealStatus::CONFIRMING], true)) {
+            return [];
+        }
+        if ($receivedLep < (int) $deal['amount_lep']) {
+            return [];
+        }
+        $status = $bestConfirmations >= $requiredConfirmations ? DealStatus::FUNDED : DealStatus::CONFIRMING;
+
+        return $status === $deal['status'] ? [] : ['status' => $status];
+    }
+
+    /**
+     * Fields for a new deal. A key given up front (the seller's from the
+     * listing, the buyer's from checkout) is checked and stored; with both
+     * keys present the escrow is fixed right away.
+     *
+     * @return array<string,mixed>
+     */
+    public function create(?string $sellerKey, ?string $buyerKey, int $now): array
+    {
+        $deal = ['status' => DealStatus::AWAITING_KEYS, 'seller_pubkey' => null, 'buyer_pubkey' => null];
+        if ($sellerKey !== null && $sellerKey !== '') {
+            $deal['seller_pubkey'] = $this->cleanPubKey($sellerKey);
+        }
+        if ($buyerKey !== null && $buyerKey !== '') {
+            $deal['buyer_pubkey'] = $this->cleanPubKey($buyerKey);
+        }
+
+        return $this->fixEscrowIfComplete($deal, $now);
+    }
+
+    private function sellerSubmitKey(array $deal, string $pubKeyHex, int $now): array
+    {
+        $this->expect($deal, DealStatus::AWAITING_KEYS);
+        if (!empty($deal['seller_pubkey'])) {
+            throw new DealException('This step is not available at the moment.');
+        }
+        $deal['seller_pubkey'] = $this->cleanPubKey($pubKeyHex);
+
+        return $this->fixEscrowIfComplete($deal, $now);
+    }
+
+    private function buyerSubmitKey(array $deal, string $pubKeyHex, int $now): array
+    {
+        $this->expect($deal, DealStatus::AWAITING_KEYS);
+        if (!empty($deal['buyer_pubkey'])) {
+            throw new DealException('This step is not available at the moment.');
+        }
+        $deal['buyer_pubkey'] = $this->cleanPubKey($pubKeyHex);
+
+        return $this->fixEscrowIfComplete($deal, $now);
+    }
+
+    /**
+     * With both keys known, fixes the escrow: script, address and both
+     * dates are set and never change afterwards.
+     *
+     * @return array<string,mixed> the key fields plus, when complete, the escrow fields and the next status
+     */
+    private function fixEscrowIfComplete(array $deal, int $now): array
+    {
+        $fields = ['status' => DealStatus::AWAITING_KEYS];
+        foreach (['seller_pubkey', 'buyer_pubkey'] as $column) {
+            if (!empty($deal[$column])) {
+                $fields[$column] = $deal[$column];
+            }
+        }
+        if (empty($deal['seller_pubkey']) || empty($deal['buyer_pubkey'])) {
+            return $fields;
+        }
+
+        $refundLocktime = $this->timeouts->buyerRefundLocktime($now);
+        $claimLocktime = $this->timeouts->sellerReleaseLocktime($now);
+        try {
+            $witnessScript = EscrowScript::witnessScriptHex($deal['seller_pubkey'], $deal['buyer_pubkey'], $refundLocktime, $claimLocktime);
+        } catch (InvalidArgumentException $e) {
+            throw new DealException('Buyer and seller must use different keys.');
+        }
+
+        $fields['status'] = DealStatus::AWAITING_PAYMENT;
+
+        return $fields + [
+            'buyer_refund_locktime' => $refundLocktime,
+            'seller_release_locktime' => $claimLocktime,
+            'witness_script_hex' => $witnessScript,
+            'escrow_address' => EscrowScript::address($witnessScript, $this->network),
+        ];
+    }
+
+    private function buyerMarkReceived(array $deal, int $now): array
+    {
+        $this->expect($deal, DealStatus::SHIPPED);
+        if (!TimeoutPolicy::canSafelyStartRelease((int) $deal['buyer_refund_locktime'], $now)) {
+            throw new DealException('The refund time is too close to start a release now. Use the refund path instead.');
+        }
+
+        return ['status' => DealStatus::AWAITING_SELLER_RELEASE];
+    }
+
+    /**
+     * Takes the release PSBT the seller built and signed in their own wallet.
+     */
+    private function sellerSubmitRelease(array $deal, string $psbtText, string $payoutAddress): array
+    {
+        $this->expect($deal, DealStatus::AWAITING_SELLER_RELEASE);
+        $payoutAddress = trim($payoutAddress);
+        $payoutScript = Address::toScriptPubKeyHex($payoutAddress, $this->network);
+        if ($payoutScript === null) {
+            throw new DealException('This is not a valid address for this network.');
+        }
+        $funding = json_decode((string) ($deal['funding_outputs'] ?? ''), true);
+        if (!is_array($funding) || $funding === []) {
+            throw new DealException('The payment outputs are not known yet. Check the chain first and try again.');
+        }
+
+        try {
+            $psbt = Psbt::parse($psbtText);
+            PsbtVerifier::assertReleasePsbt($psbt, [
+                'witnessScriptHex' => $deal['witness_script_hex'],
+                'fundingOutputs' => $funding,
+                'payoutScriptPubKeyHex' => $payoutScript,
+                'allowedPubKeys' => [$deal['seller_pubkey'], $deal['buyer_pubkey']],
+                'signerPubKey' => $deal['seller_pubkey'],
+            ]);
+        } catch (InvalidArgumentException $e) {
+            throw new DealException('This is not a valid PSBT.');
+        } catch (RuntimeException $e) {
+            throw new DealException($e->getMessage());
+        }
+
+        return [
+            'status' => DealStatus::AWAITING_BUYER_RELEASE,
+            'seller_payout_address' => $payoutAddress,
+            'release_psbt_signed' => $psbt->toBase64(),
+        ];
+    }
+
+    private function advance(array $deal, string $from, string $to): array
+    {
+        $this->expect($deal, $from);
+
+        return ['status' => $to];
+    }
+
+    /**
+     * Either party may cancel as long as no payment can exist yet.
+     */
+    private function cancel(array $deal): array
+    {
+        if (!in_array($deal['status'], DealStatus::CANCELLABLE, true)) {
+            throw new DealException('This deal can no longer be cancelled.');
+        }
+
+        return ['status' => DealStatus::CANCELLED];
+    }
+
+    private function expect(array $deal, string $status): void
+    {
+        if ($deal['status'] !== $status) {
+            throw new DealException('This step is not available at the moment.');
+        }
+    }
+
+    private function expectFundsAtRisk(array $deal): void
+    {
+        if (!in_array($deal['status'], DealStatus::FUNDS_AT_RISK, true)) {
+            throw new DealException('This step is not available at the moment.');
+        }
+    }
+
+    private function expectTimeReached(int $locktime, int $now, string $message): void
+    {
+        if ($locktime <= 0 || $now < $locktime) {
+            throw new DealException($message);
+        }
+    }
+
+    private function cleanPubKey(string $hex): string
+    {
+        $hex = strtolower(preg_replace('/\s+/', '', $hex));
+        if (!PubKey::isValidCompressed($hex)) {
+            throw new DealException('This is not a valid compressed public key (66 hex characters, starting with 02 or 03).');
+        }
+
+        return $hex;
+    }
+
+    private function cleanTxid(string $txid): string
+    {
+        $txid = strtolower(trim($txid));
+        if (!preg_match('/^[0-9a-f]{64}$/', $txid)) {
+            throw new DealException('A transaction id is 64 hexadecimal characters.');
+        }
+
+        return $txid;
+    }
+}

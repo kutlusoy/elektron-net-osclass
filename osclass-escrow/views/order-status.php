@@ -1,25 +1,108 @@
 <?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
-/** @var array $order */
-/** @var array|false $item Osclass item row, or false if the listing was since removed (see DAO::findByPrimaryKey()) */
+/** @var array $deal */
+/** @var string $role 'buyer' or 'seller' */
+/** @var array|false $item */
 /** @var float $amountElek */
 /** @var int $requiredConfirmations */
-/** @var bool $isBuyer */
+/** @var array[] $events */
 /** @var string|null $statusMessage */
 /** @var string|null $errorMessage */
 
-use Endroid\QrCode\QrCode;
-use Endroid\QrCode\Writer\PngWriter;
-use ElektronNet\Payments\Core\Escrow\OrderStatus;
+use ElektronNet\Escrow\DealStatus;
+use ElektronNet\Escrow\Descriptor;
+use ElektronNet\Escrow\Psbt;
+use ElektronNet\Escrow\PsbtVerifier;
 
+$status = $deal['status'];
+$isBuyer = $role === 'buyer';
+$myTurn = DealStatus::mayAct($deal, $role);
 $now = time();
-$pastT1 = $now >= (int) $order['buyer_refund_locktime'];
-$showPaymentDetails = $order['status'] === OrderStatus::AWAITING_PAYMENT || $order['status'] === OrderStatus::CONFIRMING;
+$dealId = (int) $deal['pk_i_id'];
+$t1 = (int) $deal['buyer_refund_locktime'];
+$t2 = (int) $deal['seller_release_locktime'];
+$amountText = elektron_escrow_format_amount($amountElek) . ' ELEK';
+$fundsAtRisk = in_array($status, DealStatus::FUNDS_AT_RISK, true);
+$funding = elektron_escrow_deal_funding_list($deal);
+$fundingTotalLep = array_sum(array_column($funding, 'amountLep'));
+$fundingTotalElek = elektron_escrow_plain_amount($fundingTotalLep / 100000000);
+$ownKey = $isBuyer ? $deal['buyer_pubkey'] : $deal['seller_pubkey'];
+$otherKey = $isBuyer ? $deal['seller_pubkey'] : $deal['buyer_pubkey'];
+
+$path = [
+    DealStatus::AWAITING_KEYS,
+    DealStatus::AWAITING_PAYMENT, DealStatus::CONFIRMING, DealStatus::FUNDED, DealStatus::SHIPPED,
+    DealStatus::AWAITING_SELLER_RELEASE, DealStatus::AWAITING_BUYER_RELEASE, DealStatus::RELEASED,
+];
+$position = array_search($status, $path, true);
+
+$publicDescriptor = null;
+$descriptorTemplate = null;
+if ($deal['witness_script_hex'] !== null) {
+    $publicDescriptor = Descriptor::escrow($deal['seller_pubkey'], $deal['buyer_pubkey'], $t1, $t2);
+    $descriptorTemplate = Descriptor::escrowBody($deal['seller_pubkey'], $deal['buyer_pubkey'], $t1, $t2, $ownKey, '<YOUR_PRIVATE_KEY>');
+}
+
+$showShipping = !$isBuyer && in_array($status, [
+    DealStatus::FUNDED, DealStatus::SHIPPED, DealStatus::AWAITING_SELLER_RELEASE,
+    DealStatus::AWAITING_BUYER_RELEASE, DealStatus::RELEASED, DealStatus::CLAIMED,
+], true);
+
+$inputsJson = function (?int $sequence) use ($funding): string {
+    $inputs = [];
+    foreach ($funding as $output) {
+        $input = ['txid' => $output['txid'], 'vout' => $output['vout']];
+        if ($sequence !== null) {
+            $input['sequence'] = $sequence;
+        }
+        $inputs[] = $input;
+    }
+
+    return json_encode($inputs, JSON_UNESCAPED_SLASHES);
+};
+$createCommand = function (string $address, int $locktime, ?int $sequence) use ($inputsJson, $fundingTotalElek): string {
+    return 'walletcreatefundedpsbt \'' . $inputsJson($sequence) . '\' \'[{"' . $address . '":' . $fundingTotalElek . '}]\' ' . $locktime
+        . ' \'{"add_inputs":false,"subtractFeeFromOutputs":[0]}\'';
+};
+
+$help = 'elektron_escrow_help';
+$consoleHelp = function (string $title, array $lines) use ($help): void {
+    echo '<details><summary>' . osc_esc_html($title) . $help('console') . '</summary>';
+    foreach ($lines as $line) {
+        echo '<p>' . $line . '</p>';
+    }
+    echo '</details>';
+};
+$code = function (string $text): string {
+    return '<code class="elektron-escrow-code">' . osc_esc_html($text) . '</code>';
+};
+$why = function (string $text): string {
+    return '<p class="elektron-escrow-why">' . osc_esc_html($text) . '</p>';
+};
 
 elektron_escrow_table_style();
 ?>
+<style>
+    .elektron-escrow-steps { list-style: none; padding: 0; margin: 1em 0; display: flex; flex-wrap: wrap; gap: 6px; }
+    .elektron-escrow-steps li { padding: 4px 10px; border: 1px solid #ccc; border-radius: 12px; font-size: 0.85em; color: #777; }
+    .elektron-escrow-steps li.done { color: #2a7a2a; border-color: #2a7a2a; }
+    .elektron-escrow-steps li.current { background: #fff3cd; border-color: #d4a017; color: #000; font-weight: bold; }
+    .elektron-escrow-next { background: #eef6ff; border: 1px solid #9cc4f0; border-radius: 4px; padding: 10px 14px; margin: 1em 0; }
+    .elektron-escrow-panel { border: 1px solid #ddd; border-radius: 4px; padding: 6px 14px; margin: 1em 0; }
+    .elektron-escrow-order textarea { width: 100%; box-sizing: border-box; }
+    .elektron-escrow-order details { margin: 0.5em 0; }
+    .elektron-escrow-events { list-style: none; padding: 0; }
+    .elektron-escrow-events li { padding: 4px 0; border-bottom: 1px solid #eee; }
+</style>
 
 <div class="elektron-escrow-order">
-    <h1><?php _e('Elektron order', ELEKTRON_ESCROW_DOMAIN); ?> #<?php echo (int) $order['pk_i_id']; ?></h1>
+    <h1><?php _e('Elektron order', ELEKTRON_ESCROW_DOMAIN); ?> #<?php echo $dealId; ?></h1>
+
+    <details>
+        <summary><?php _e('How does this work? (short explanation)', ELEKTRON_ESCROW_DOMAIN); ?></summary>
+        <p><?php _e('The buyer\'s payment goes into an escrow address that only the two of you can open together. Every transaction is created and signed in your own wallet. This website only passes information between you and shows you where the deal stands. It never holds a key and cannot move any money.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+        <p><?php _e('You always do one step at a time. When it is the other person\'s turn, you wait. If something goes wrong, the escrow address has built-in exits: after the refund date the buyer can take the money back alone, after the claim date the seller can take it alone.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+        <p><?php _e('Where a step needs your wallet, a "?" explains the term and a box shows the exact commands for the Elektron Net node wallet.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+    </details>
 
     <table class="elektron-escrow-table">
         <tr>
@@ -32,312 +115,220 @@ elektron_escrow_table_style();
                 <?php } ?>
             </td>
         </tr>
-        <tr>
-            <td><?php _e('Amount', ELEKTRON_ESCROW_DOMAIN); ?></td>
-            <td><?php echo osc_esc_html(elektron_escrow_format_amount($amountElek)); ?> ELEK</td>
-        </tr>
-        <tr>
-            <td><?php _e('Status', ELEKTRON_ESCROW_DOMAIN); ?></td>
-            <td class="elektron-escrow-status" data-status="<?php echo osc_esc_html($order['status']); ?>"><?php echo osc_esc_html(elektron_escrow_status_label($order['status'])); ?></td>
-        </tr>
+        <tr><td><?php _e('Amount', ELEKTRON_ESCROW_DOMAIN); ?></td><td><?php echo osc_esc_html($amountText); ?></td></tr>
+        <tr><td><?php _e('Your role', ELEKTRON_ESCROW_DOMAIN); ?></td><td><?php echo $isBuyer ? osc_esc_html(__('Buyer', ELEKTRON_ESCROW_DOMAIN)) : osc_esc_html(__('Seller', ELEKTRON_ESCROW_DOMAIN)); ?></td></tr>
+        <tr><td><?php _e('Status', ELEKTRON_ESCROW_DOMAIN); ?><?php echo $help('status'); ?></td><td class="elektron-escrow-status" data-status="<?php echo osc_esc_html($status); ?>"><?php echo osc_esc_html(elektron_escrow_status_label($status)); ?></td></tr>
+        <?php if ($t1 > 0) { ?>
+            <tr><td><?php _e('Buyer can reclaim after', ELEKTRON_ESCROW_DOMAIN); ?><?php echo $help('locktimes'); ?></td><td><?php echo osc_esc_html(date('Y-m-d H:i T', $t1)); ?></td></tr>
+            <tr><td><?php _e('Seller can claim after', ELEKTRON_ESCROW_DOMAIN); ?><?php echo $help('locktimes'); ?></td><td><?php echo osc_esc_html(date('Y-m-d H:i T', $t2)); ?></td></tr>
+        <?php } ?>
+        <?php if ($deal['closing_txid'] !== null) { ?>
+            <?php $closingLink = elektron_escrow_explorer_url('tx', $deal['closing_txid']); ?>
+            <tr><td><?php _e('Closing transaction (as reported)', ELEKTRON_ESCROW_DOMAIN); ?><?php echo $help('txid'); ?></td><td><?php echo $closingLink !== null ? '<a href="' . osc_esc_html($closingLink) . '" target="_blank" rel="noopener noreferrer">' . osc_esc_html($deal['closing_txid']) . '</a>' : osc_esc_html($deal['closing_txid']); ?></td></tr>
+        <?php } ?>
     </table>
+
+    <?php if ($position !== false) { ?>
+        <ol class="elektron-escrow-steps">
+            <?php foreach ($path as $index => $step) { ?>
+                <li class="<?php echo $index < $position ? 'done' : ($index === $position ? 'current' : ''); ?>"><?php echo osc_esc_html(elektron_escrow_status_label($step)); ?></li>
+            <?php } ?>
+        </ol>
+    <?php } ?>
 
     <?php if ($statusMessage !== null) { ?>
         <p class="elektron-escrow-success"><?php echo osc_esc_html($statusMessage); ?></p>
     <?php } ?>
-
     <?php if ($errorMessage !== null) { ?>
         <p class="elektron-escrow-error"><?php echo osc_esc_html($errorMessage); ?></p>
     <?php } ?>
 
+    <div class="elektron-escrow-next"><strong><?php _e('Next step', ELEKTRON_ESCROW_DOMAIN); ?>:</strong> <?php echo osc_esc_html(elektron_escrow_next_step($deal, $role)); ?></div>
+
+    <?php if ($deal['escrow_address'] !== null) { ?>
+        <div class="elektron-escrow-panel">
+            <p><strong><?php _e('Escrow address', ELEKTRON_ESCROW_DOMAIN); ?></strong><?php echo $help('escrow'); ?></p>
+            <?php echo $code($deal['escrow_address']); ?>
+            <?php $addressLink = elektron_escrow_explorer_url('address', $deal['escrow_address']); ?>
+            <?php if ($addressLink !== null) { ?>
+                <p><a href="<?php echo osc_esc_html($addressLink); ?>" target="_blank" rel="noopener noreferrer"><?php _e('Open in block explorer', ELEKTRON_ESCROW_DOMAIN); ?></a></p>
+            <?php } ?>
+            <details>
+                <summary><?php _e('Escrow descriptor (public)', ELEKTRON_ESCROW_DOMAIN); ?><?php echo $help('descriptor'); ?></summary>
+                <?php echo $code($publicDescriptor); ?>
+            </details>
+            <p class="text-muted"><?php _e('This page only shows what the two parties submitted. Always check addresses, amounts and transactions in your own wallet.', ELEKTRON_ESCROW_DOMAIN); ?><?php echo $help('verify'); ?></p>
+        </div>
+    <?php } ?>
+
+    <?php if ($deal['escrow_address'] !== null && !DealStatus::isTerminal($status)) { ?>
+        <details class="elektron-escrow-panel">
+            <summary><strong><?php _e('Check the address and prepare your wallet (recommended before you pay or ship)', ELEKTRON_ESCROW_DOMAIN); ?></strong><?php echo $help('check_address'); ?></summary>
+            <?php echo $why(__('Why: your wallet calculates the address on its own, so you do not have to trust this page. Preparing it now means you can sign later without delay.', ELEKTRON_ESCROW_DOMAIN)); ?>
+            <?php $consoleHelp(__('Node wallet console', ELEKTRON_ESCROW_DOMAIN), [
+                '<strong>' . osc_esc_html(__('1. Check the address', ELEKTRON_ESCROW_DOMAIN)) . '</strong><br />' . osc_esc_html(__('This must print exactly the escrow address shown above:', ELEKTRON_ESCROW_DOMAIN)) . $code('deriveaddresses "' . $publicDescriptor . '"'),
+                '<strong>' . osc_esc_html(__('2. Prepare signing', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('private_key') . '<br />' . osc_esc_html(__('Replace <YOUR_PRIVATE_KEY> everywhere by the private key that belongs to your public key (a WIF key, or a key from "listdescriptors true" written as [fingerprint/path]xprv.../0/N). Then add the checksum and import it into the wallet you sign with:', ELEKTRON_ESCROW_DOMAIN)) . $code('getdescriptorinfo "' . $descriptorTemplate . '"') . $code('importdescriptors \'[{"desc":"<descriptor from getdescriptorinfo>","timestamp":"now"}]\''),
+            ]); ?>
+        </details>
+    <?php } ?>
+
+    <?php if ($myTurn) { ?>
+        <div class="elektron-escrow-panel">
+        <?php switch ($status) {
+            case DealStatus::AWAITING_KEYS:
+                echo $why(__('Why: the escrow address is built from your public key and the other party\'s public key. A public key can be shared safely.', ELEKTRON_ESCROW_DOMAIN));
+                elektron_escrow_action_form($deal, $isBuyer ? 'buyer_submit_key' : 'seller_submit_key', __('Submit', ELEKTRON_ESCROW_DOMAIN), [
+                    'pubkey' => ['label' => __('Your public key (66 characters)', ELEKTRON_ESCROW_DOMAIN), 'placeholder' => '02...', 'help' => 'pubkey'],
+                ]);
+                echo elektron_escrow_howto('pubkey');
+                break;
+
+            case DealStatus::AWAITING_PAYMENT:
+                $paymentUri = elektron_escrow_payment_uri($deal['escrow_address'], $amountElek, $dealId);
+                echo $why(__('Why: the payment is a normal transaction from your wallet to the escrow address. From there it can only move with both signatures, or through the exits after the refund or claim date.', ELEKTRON_ESCROW_DOMAIN));
+                echo '<p><strong>' . osc_esc_html(sprintf(__('Send %s to the escrow address', ELEKTRON_ESCROW_DOMAIN), $amountText)) . '</strong></p>';
+                echo elektron_escrow_qr_image($paymentUri, $paymentUri);
+                echo $code($deal['escrow_address']);
+                echo '<p>' . osc_esc_html(__('Pay the full amount in one transaction. This page detects the payment by itself.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
+                break;
+
+            case DealStatus::FUNDED:
+                if ($t1 - $now < 14 * 86400) {
+                    echo '<p class="elektron-escrow-error">' . osc_esc_html(__('Warning: the buyer can take the money back from the refund date shown above, which is close. Think twice before you ship.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
+                }
+                echo $why(__('Why: ship only when your own wallet shows the confirmed payment at the escrow address. The money is then locked for you.', ELEKTRON_ESCROW_DOMAIN));
+                elektron_escrow_action_form($deal, 'seller_mark_shipped', __('I have shipped the goods', ELEKTRON_ESCROW_DOMAIN), [], __('Only confirm once the goods are shipped and your own wallet shows the confirmed payment.', ELEKTRON_ESCROW_DOMAIN));
+                break;
+
+            case DealStatus::SHIPPED:
+                echo $why(__('Why: confirming receipt lets the seller prepare the release. Only the buyer\'s own signature, at the very end, actually moves the money.', ELEKTRON_ESCROW_DOMAIN));
+                elektron_escrow_action_form($deal, 'buyer_mark_received', __('I have received the goods', ELEKTRON_ESCROW_DOMAIN), [], __('Only confirm if you received the goods as agreed.', ELEKTRON_ESCROW_DOMAIN));
+                break;
+
+            case DealStatus::AWAITING_SELLER_RELEASE:
+                echo $why(__('Why: you create the release transaction in your own wallet, paying yourself, and sign it first. The buyer then checks it and has the final say with the second signature.', ELEKTRON_ESCROW_DOMAIN));
+                if ($funding === []) {
+                    echo '<p>' . osc_esc_html(__('The payment outputs are not known yet. Use "Check the chain now" below.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
+                    break;
+                }
+                $consoleHelp(__('How do I create and sign the release? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
+                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The fee is taken from the amount.', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', 0, null)),
+                    '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),
+                    osc_esc_html(__('Paste the "psbt" value of the result below, together with your address.', ELEKTRON_ESCROW_DOMAIN)),
+                ]);
+                elektron_escrow_action_form($deal, 'seller_submit_release', __('Submit my signed release', ELEKTRON_ESCROW_DOMAIN), [
+                    'address' => ['label' => __('The address you paid yourself to', ELEKTRON_ESCROW_DOMAIN), 'help' => 'payout', 'value' => (string) $deal['seller_payout_address']],
+                    'psbt' => ['label' => __('Signed release transaction (PSBT)', ELEKTRON_ESCROW_DOMAIN), 'type' => 'textarea', 'help' => 'psbt'],
+                ]);
+                echo elektron_escrow_howto('address');
+                break;
+
+            case DealStatus::AWAITING_BUYER_RELEASE:
+                echo $why(__('Why: you decide. Check in your wallet where the money goes. Only if everything is right, add your signature and broadcast.', ELEKTRON_ESCROW_DOMAIN));
+                $summary = PsbtVerifier::inspect(Psbt::parse($deal['release_psbt_signed']), elektron_escrow_network_params());
+                echo '<p><strong>' . osc_esc_html(__('The seller\'s release pays', ELEKTRON_ESCROW_DOMAIN)) . ':</strong> '
+                    . osc_esc_html(elektron_escrow_format_amount($summary['outputs'][0]['amountLep'] / 100000000)) . ' ELEK '
+                    . osc_esc_html(__('to', ELEKTRON_ESCROW_DOMAIN)) . ' ' . osc_esc_html((string) $summary['outputs'][0]['address'])
+                    . ' (' . osc_esc_html(__('fee', ELEKTRON_ESCROW_DOMAIN)) . ': ' . osc_esc_html((string) $summary['feeLep']) . ' lep)' . $help('verify') . '</p>';
+                elektron_escrow_copy_block(__('Release transaction signed by the seller (PSBT)', ELEKTRON_ESCROW_DOMAIN), $deal['release_psbt_signed'], 'elektron-escrow-psbt-' . $dealId, 'release-' . $dealId . '.psbt', 'psbt');
+                $consoleHelp(__('How do I check, sign and broadcast it? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
+                    '<strong>' . osc_esc_html(__('1. Look at it in your wallet', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('verify') . $code('decodepsbt "<the PSBT above>"'),
+                    '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<the PSBT above>"'),
+                    '<strong>' . osc_esc_html(__('3. Finish it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('finalize') . $code('finalizepsbt "<psbt from step 2>"'),
+                    '<strong>' . osc_esc_html(__('4. Send it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('broadcast') . $code('sendrawtransaction "<hex from step 3>"'),
+                    osc_esc_html(__('Paste the resulting transaction id below.', ELEKTRON_ESCROW_DOMAIN)),
+                ]);
+                elektron_escrow_action_form($deal, 'buyer_mark_released', __('I have broadcast the release', ELEKTRON_ESCROW_DOMAIN), [
+                    'txid' => ['label' => __('Transaction id of the release', ELEKTRON_ESCROW_DOMAIN), 'help' => 'txid'],
+                ]);
+                break;
+        } ?>
+        </div>
+    <?php } ?>
+
+    <?php if (in_array($status, [DealStatus::AWAITING_PAYMENT, DealStatus::CONFIRMING, DealStatus::AWAITING_SELLER_RELEASE], true)) { ?>
+        <?php elektron_escrow_action_form($deal, 'check_chain', __('Check the chain now', ELEKTRON_ESCROW_DOMAIN)); ?>
+        <p class="text-muted"><?php printf(osc_esc_html(__('The payment needs %d confirmations.', ELEKTRON_ESCROW_DOMAIN)), $requiredConfirmations); ?><?php echo $help('confirmations'); ?></p>
+    <?php } ?>
+
+    <?php if ($showShipping) { ?>
+        <div class="elektron-escrow-panel">
+            <p><strong><?php _e('Ship to', ELEKTRON_ESCROW_DOMAIN); ?></strong></p>
+            <p><?php echo osc_esc_html($deal['buyer_shipping_name']); ?><br /><?php echo nl2br(osc_esc_html($deal['buyer_shipping_address'])); ?></p>
+            <p><?php _e('Phone number', ELEKTRON_ESCROW_DOMAIN); ?>: <?php echo osc_esc_html($deal['buyer_shipping_phone']); ?><br />
+               <?php _e('Contact email for this order', ELEKTRON_ESCROW_DOMAIN); ?>: <?php echo osc_esc_html($deal['buyer_contact_email']); ?></p>
+        </div>
+    <?php } ?>
+
+    <?php if ($fundsAtRisk && $funding !== []) {
+        $exitLocktime = $isBuyer ? $t1 : $t2;
+        $exitReached = $now >= $exitLocktime;
+        ?>
+        <div class="elektron-escrow-panel">
+            <h3><?php echo $isBuyer ? osc_esc_html(__('Take your money back after the refund date', ELEKTRON_ESCROW_DOMAIN)) : osc_esc_html(__('Claim your money after the claim date', ELEKTRON_ESCROW_DOMAIN)); ?><?php echo $help($isBuyer ? 'refund' : 'claim'); ?></h3>
+            <?php if (!$exitReached) { ?>
+                <p><?php printf(osc_esc_html($isBuyer
+                    ? __('If the seller does not complete the deal, you can reclaim the funds yourself from %s, with a transaction from your own wallet. Nothing needs to be prepared now.', ELEKTRON_ESCROW_DOMAIN)
+                    : __('If the buyer neither confirms nor refunds, you can claim the funds yourself from %s, with a transaction from your own wallet. Nothing needs to be prepared now.', ELEKTRON_ESCROW_DOMAIN)), osc_esc_html(date('Y-m-d H:i T', $exitLocktime))); ?></p>
+            <?php } else { ?>
+                <p><?php _e('The date has passed. Create the transaction in your wallet, broadcast it, and enter its transaction id.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+                <?php $consoleHelp(__('How do I do this? (node wallet console)', ELEKTRON_ESCROW_DOMAIN), [
+                    '<strong>' . osc_esc_html(__('1. Create the transaction', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('psbt') . '<br />' . osc_esc_html(__('Replace <YOUR_ADDRESS> with an address of your own wallet. The number before the options is the locked time.', ELEKTRON_ESCROW_DOMAIN)) . $code($createCommand('<YOUR_ADDRESS>', $exitLocktime, 4294967294)),
+                    '<strong>' . osc_esc_html(__('2. Sign it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('sign') . $code('walletprocesspsbt "<psbt from step 1>"'),
+                    '<strong>' . osc_esc_html(__('3. Finish it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('finalize') . $code('finalizepsbt "<psbt from step 2>"'),
+                    '<strong>' . osc_esc_html(__('4. Send it', ELEKTRON_ESCROW_DOMAIN)) . '</strong>' . $help('broadcast') . $code('sendrawtransaction "<hex from step 3>"'),
+                ]); ?>
+                <?php elektron_escrow_action_form($deal, $isBuyer ? 'buyer_mark_refunded' : 'seller_mark_claimed', $isBuyer ? __('I have broadcast the refund', ELEKTRON_ESCROW_DOMAIN) : __('I have broadcast the claim', ELEKTRON_ESCROW_DOMAIN), [
+                    'txid' => ['label' => __('Transaction id', ELEKTRON_ESCROW_DOMAIN), 'help' => 'txid'],
+                ]); ?>
+            <?php } ?>
+        </div>
+    <?php } ?>
+
     <?php
-    // Prominent "Next step" box — role- and status-aware so both parties
-    // immediately see what they need to do after the initial payment.
-    $nextStep = null;
-    $nextStepClass = 'elektron-escrow-next';
-    if ($order['status'] === OrderStatus::AWAITING_PAYMENT || $order['status'] === OrderStatus::CONFIRMING) {
-        if ($isBuyer) {
-            $nextStep = __('Pay the amount shown to the escrow address (QR code below). Once confirmed, the seller will see your shipping details.', ELEKTRON_ESCROW_DOMAIN);
-        } else {
-            $nextStep = __('Waiting for the buyer to pay. You will receive the shipping details once the payment is confirmed.', ELEKTRON_ESCROW_DOMAIN);
-        }
-    } elseif ($order['status'] === OrderStatus::FUNDED) {
-        if ($isBuyer) {
-            $nextStep = __('Payment confirmed. Waiting for the seller to confirm shipment.', ELEKTRON_ESCROW_DOMAIN);
-        } else {
-            $nextStep = __('Payment confirmed. Ship the goods, then click "I have shipped" below.', ELEKTRON_ESCROW_DOMAIN);
-        }
-    } elseif ($order['status'] === OrderStatus::SHIPPED) {
-        if ($isBuyer) {
-            $nextStep = __('Seller has shipped. When you receive the goods, click "I have received" below.', ELEKTRON_ESCROW_DOMAIN);
-        } else {
-            $nextStep = __('You confirmed shipment. Waiting for the buyer to confirm receipt.', ELEKTRON_ESCROW_DOMAIN);
-        }
-    } elseif ($order['status'] === OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE) {
-        if ($isBuyer) {
-            if ((int)($order['psbt_signature_count'] ?? 0) < 1) {
-                $nextStep = __('Sign the release transaction in your wallet (QR / text below), then paste the signed version back here.', ELEKTRON_ESCROW_DOMAIN);
-            } else {
-                $nextStep = __('You already signed. Waiting for the seller to sign and broadcast the release.', ELEKTRON_ESCROW_DOMAIN);
-            }
-        } else {
-            if ((int)($order['psbt_signature_count'] ?? 0) < 1) {
-                $nextStep = __('Waiting for the buyer to sign the release first.', ELEKTRON_ESCROW_DOMAIN);
-            } else {
-                $nextStep = __('Scan the QR code below (or copy the text) into your wallet, add your signature and broadcast. Then mark the order as released.', ELEKTRON_ESCROW_DOMAIN);
-            }
-        }
-    } elseif (in_array($order['status'], OrderStatus::TERMINAL, true)) {
-        $nextStep = __('This order is finished.', ELEKTRON_ESCROW_DOMAIN);
-        $nextStepClass .= ' elektron-escrow-next--done';
+    if (in_array($status, DealStatus::CANCELLABLE, true)) {
+        elektron_escrow_action_form($deal, 'cancel', __('Cancel this deal', ELEKTRON_ESCROW_DOMAIN), [], __('Cancel this deal? Only possible while no payment was made.', ELEKTRON_ESCROW_DOMAIN));
     }
     ?>
-    <?php if ($nextStep !== null) { ?>
-        <div class="<?php echo $nextStepClass; ?>" style="border:1px solid #4a90d9; background:#f0f7ff; padding:1em; margin:1em 0; border-radius:6px;">
-            <strong><?php _e('Next step', ELEKTRON_ESCROW_DOMAIN); ?>:</strong>
-            <p style="margin:0.4em 0 0;"><?php echo osc_esc_html($nextStep); ?></p>
-        </div>
-    
-    <?php if (!$isBuyer && $order['status'] === OrderStatus::FUNDED) { ?>
-        <form method="post" style="margin:1em 0;">
-            <?php echo osc_csrf_token_form(); ?>
-            <input type="hidden" name="mark_shipped" value="1" />
-            <button type="submit" class="btn btn-primary" style="font-size:1.2em; padding:0.6em 1.4em;">
-                <?php _e('I have shipped', ELEKTRON_ESCROW_DOMAIN); ?>
-            </button>
-        </form>
-    <?php } ?>
 
-<?php } ?>
-
-    <?php
-    // Only shown to the seller, and only once payment is actually
-    // confirmed (i.e. no longer awaiting_payment/confirming) -- see
-    // controllers/checkout.php for why this is collected per order rather
-    // than once on the buyer's profile, and includes/mail.php for the
-    // same details sent in the 'funded' email.
-    ?>
-    <?php if (!$isBuyer && !$showPaymentDetails) { ?>
-        <h2><?php _e('Shipping details', ELEKTRON_ESCROW_DOMAIN); ?></h2>
-        <table class="elektron-escrow-table">
-            <tr>
-                <td><?php _e('Full name', ELEKTRON_ESCROW_DOMAIN); ?></td>
-                <td><?php echo osc_esc_html($order['buyer_shipping_name']); ?></td>
-            </tr>
-            <tr>
-                <td><?php _e('Shipping address', ELEKTRON_ESCROW_DOMAIN); ?></td>
-                <td style="white-space: pre-wrap;"><?php echo osc_esc_html($order['buyer_shipping_address']); ?></td>
-            </tr>
-            <tr>
-                <td><?php _e('Phone number', ELEKTRON_ESCROW_DOMAIN); ?></td>
-                <td><?php echo osc_esc_html($order['buyer_shipping_phone']); ?></td>
-            </tr>
-            <tr>
-                <td><?php _e('Contact email for this order', ELEKTRON_ESCROW_DOMAIN); ?></td>
-                <td><?php echo osc_esc_html($order['buyer_contact_email']); ?></td>
-            </tr>
-        </table>
-    <?php } ?>
-
-    <?php
-    // Payment details (address, QR code, payment URI) and the "send X ELEK"
-    // instruction are buyer-only: the seller has nothing to pay and no
-    // action to take yet, so showing them the buyer's own payment
-    // instructions here was confusing -- a real install showed the seller
-    // "the same payment page as the buyer". The seller instead gets a
-    // status message written for them (MessageCatalog's
-    // 'order.awaiting_payment.seller' / 'order.confirming.seller', see
-    // core/src/I18n/MessageCatalog.php), with no payment details at all.
-    ?>
-    <?php if ($showPaymentDetails && $isBuyer) { ?>
-        <?php
-        // Encodes the full elek: payment URI (address + amount), not just
-        // the bare address, so a wallet that understands the scheme can
-        // prefill both from one scan. Scheme confirmed against the actual
-        // Elektron Net wallet fork's own source, not invented here -- see
-        // elektron_escrow_payment_uri()'s docblock (includes/formatting.php).
-        $paymentUri = elektron_escrow_payment_uri($order['s_address'], $amountElek, (int) $order['pk_i_id']);
-        $qrCode = new QrCode($paymentUri);
-        $qrPngBase64 = base64_encode((new PngWriter())->write($qrCode)->getString());
-        ?>
-        <img src="data:image/png;base64,<?php echo $qrPngBase64; ?>" alt="<?php echo osc_esc_html($paymentUri); ?>" />
-
-        <p><?php _e('Address', ELEKTRON_ESCROW_DOMAIN); ?></p>
-        <code class="elektron-escrow-code"><?php echo osc_esc_html($order['s_address']); ?></code>
-
-        <p><label for="elektron-escrow-uri-<?php echo (int) $order['pk_i_id']; ?>"><?php _e('Payment URI (tap to select, then copy)', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
-        <input type="text" id="elektron-escrow-uri-<?php echo (int) $order['pk_i_id']; ?>" class="elektron-escrow-code" readonly="readonly" value="<?php echo osc_esc_html($paymentUri); ?>" onclick="this.select();" style="width: 100%; box-sizing: border-box; border: none;" />
-    <?php } ?>
-
-    <?php if ($showPaymentDetails) { ?>
-        <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
-            <?php echo osc_csrf_token_form(); ?>
-            <input type="hidden" name="check_payment" value="1" />
-            <input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Check payment now', ELEKTRON_ESCROW_DOMAIN)); ?>" />
-        </form>
-    <?php } ?>
-
-    <?php if ($order['status'] === OrderStatus::AWAITING_PAYMENT) { ?>
-        <p><?php echo osc_esc_html(elektron_escrow_t($isBuyer ? 'order.awaiting_payment' : 'order.awaiting_payment.seller', [
-            '{amount}' => elektron_escrow_format_amount($amountElek),
-        ])); ?></p>
-
-        <?php if ($isBuyer) { ?>
-            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>" onsubmit="return confirm('<?php echo osc_esc_js(__('Cancel this order? This cannot be undone.', ELEKTRON_ESCROW_DOMAIN)); ?>');">
-                <?php echo osc_csrf_token_form(); ?>
-                <input type="hidden" name="cancel_order" value="1" />
-                <input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Cancel order', ELEKTRON_ESCROW_DOMAIN)); ?>" />
-            </form>
+    <h2><?php _e('History and messages', ELEKTRON_ESCROW_DOMAIN); ?></h2>
+    <ul class="elektron-escrow-events">
+        <?php foreach ($events as $event) { ?>
+            <li>
+                <small><?php echo osc_esc_html($event['dt_pub_date']); ?></small>
+                <?php if ($event['s_type'] === 'message') { ?>
+                    <strong><?php echo ((int) $event['fk_i_user_id'] === (int) $deal['fk_i_buyer_id']) ? osc_esc_html(__('Buyer', ELEKTRON_ESCROW_DOMAIN)) : osc_esc_html(__('Seller', ELEKTRON_ESCROW_DOMAIN)); ?>:</strong>
+                    <?php echo nl2br(osc_esc_html((string) $event['s_text'])); ?>
+                <?php } else { ?>
+                    <?php echo osc_esc_html(elektron_escrow_event_label($event['s_type'])); ?>
+                    <?php if (!empty($event['s_text'])) { ?>
+                        <?php $eventLink = elektron_escrow_explorer_url('tx', $event['s_text']); ?>
+                        <?php echo $eventLink !== null ? '<a href="' . osc_esc_html($eventLink) . '" target="_blank" rel="noopener noreferrer">' . osc_esc_html(substr($event['s_text'], 0, 16)) . '...</a>' : ''; ?>
+                    <?php } ?>
+                <?php } ?>
+            </li>
         <?php } ?>
+    </ul>
+    <?php elektron_escrow_action_form($deal, 'message', __('Send message', ELEKTRON_ESCROW_DOMAIN), [
+        'message' => ['label' => __('Message to the other party', ELEKTRON_ESCROW_DOMAIN), 'help' => 'message'],
+    ]); ?>
 
-    <?php } elseif ($order['status'] === OrderStatus::CONFIRMING) { ?>
-        <p><?php echo osc_esc_html(elektron_escrow_t($isBuyer ? 'order.confirming' : 'order.confirming.seller', [
-            '{confirmations}' => (string) $requiredConfirmations,
-        ])); ?></p>
-
-    <?php } elseif ($order['status'] === OrderStatus::FUNDED) { ?>
-        <p><?php echo osc_esc_html(elektron_escrow_t('order.funded.' . ($isBuyer ? 'buyer' : 'seller'))); ?></p>
-
-        <?php if (!$pastT1) { ?>
-            <p class="elektron-escrow-countdown" data-locktime="<?php echo (int) $order['buyer_refund_locktime']; ?>">
-                <?php echo osc_esc_html(elektron_escrow_t('order.countdown.buyer_refund', [
-                    '{date}' => date('Y-m-d', (int) $order['buyer_refund_locktime']),
-                ])); ?>
-            </p>
-        <?php } else { ?>
-            <p class="elektron-escrow-countdown" data-locktime="<?php echo (int) $order['seller_release_locktime']; ?>">
-                <?php echo osc_esc_html(elektron_escrow_t('order.countdown.seller_release', [
-                    '{date}' => date('Y-m-d', (int) $order['seller_release_locktime']),
-                ])); ?>
-            </p>
+    <details>
+        <summary><?php _e('Glossary', ELEKTRON_ESCROW_DOMAIN); ?></summary>
+        <?php foreach ([
+            'escrow' => __('Escrow address', ELEKTRON_ESCROW_DOMAIN),
+            'pubkey' => __('Public key', ELEKTRON_ESCROW_DOMAIN),
+            'private_key' => __('Private key', ELEKTRON_ESCROW_DOMAIN),
+            'descriptor' => __('Descriptor', ELEKTRON_ESCROW_DOMAIN),
+            'psbt' => __('PSBT', ELEKTRON_ESCROW_DOMAIN),
+            'sign' => __('Signing', ELEKTRON_ESCROW_DOMAIN),
+            'finalize' => __('Finalizing', ELEKTRON_ESCROW_DOMAIN),
+            'broadcast' => __('Broadcasting', ELEKTRON_ESCROW_DOMAIN),
+            'txid' => __('Transaction id', ELEKTRON_ESCROW_DOMAIN),
+            'confirmations' => __('Confirmations', ELEKTRON_ESCROW_DOMAIN),
+            'locktimes' => __('Refund and claim date', ELEKTRON_ESCROW_DOMAIN),
+        ] as $key => $term) { ?>
+            <p><strong><?php echo osc_esc_html($term); ?>:</strong> <?php echo osc_esc_html(elektron_escrow_help_text($key)); ?></p>
         <?php } ?>
-
-        <?php if ($isBuyer) { ?>
-            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
-                <?php echo osc_csrf_token_form(); ?>
-                <input type="hidden" name="confirm_receipt" value="1" />
-                <input type="submit" class="btn btn-primary" value="<?php echo osc_esc_html(__('Confirm receipt', ELEKTRON_ESCROW_DOMAIN)); ?>" />
-            </form>
-        <?php } ?>
-
-    <?php } elseif ($order['status'] === OrderStatus::SHIPPED) { ?>
-        <p><?php _e('Seller has confirmed shipment.', ELEKTRON_ESCROW_DOMAIN); ?></p>
-        <?php if ($isBuyer) { ?>
-            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
-                <?php echo osc_csrf_token_form(); ?>
-                <input type="hidden" name="confirm_receipt" value="1" />
-                <button type="submit" class="btn btn-primary" style="font-size:1.2em; padding:0.6em 1.4em;">
-                    <?php _e('I have received', ELEKTRON_ESCROW_DOMAIN); ?>
-                </button>
-            </form>
-        <?php } ?>
-    <?php } elseif ($order['status'] === OrderStatus::RELEASE_PENDING_SELLER_SIGNATURE) { ?>
-        <p><?php echo osc_esc_html(elektron_escrow_t('order.release_pending_seller_signature')); ?></p>
-
-        <?php if ($order['psbt_base64'] === null) { ?>
-            <p class="text-muted"><?php _e('This release could not be prepared automatically (this is rare -- it can happen if the payment arrived in more than one transaction). The two parties will have to cooperatively sign and broadcast a spend from the escrow address using their own wallets, with the script below.', ELEKTRON_ESCROW_DOMAIN); ?></p>
-
-            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
-                <?php echo osc_csrf_token_form(); ?>
-                <input type="hidden" name="retry_psbt" value="1" />
-                <input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Try again', ELEKTRON_ESCROW_DOMAIN)); ?>" />
-            </form>
-
-            <p><?php _e('Redeem script', ELEKTRON_ESCROW_DOMAIN); ?></p>
-            <code class="elektron-escrow-code"><?php echo osc_esc_html($order['redeem_script_hex']); ?></code>
-        <?php } elseif ($isBuyer) { ?>
-            <?php if ((int) $order['psbt_signature_count'] < 1) { ?>
-                <p><?php _e('Scan this into your own wallet (or copy the text below) and sign it there. This platform never sees or handles your private key.', ELEKTRON_ESCROW_DOMAIN); ?></p>
-
-                <?php
-                $psbtQrCode = new QrCode($order['psbt_base64']);
-                $psbtQrPngBase64 = base64_encode((new PngWriter())->write($psbtQrCode)->getString());
-                ?>
-                <img src="data:image/png;base64,<?php echo $psbtQrPngBase64; ?>" alt="<?php _e('Release transaction (unsigned)', ELEKTRON_ESCROW_DOMAIN); ?>" />
-
-                <p><label for="elektron-escrow-psbt-unsigned-<?php echo (int) $order['pk_i_id']; ?>"><?php _e('Release transaction (unsigned, tap to select, then copy)', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
-                <textarea id="elektron-escrow-psbt-unsigned-<?php echo (int) $order['pk_i_id']; ?>" class="elektron-escrow-code" readonly="readonly" rows="4" style="width: 100%; box-sizing: border-box;" onclick="this.select();"><?php echo osc_esc_html($order['psbt_base64']); ?></textarea>
-
-                <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
-                    <?php echo osc_csrf_token_form(); ?>
-                    <input type="hidden" name="submit_signed_psbt" value="1" />
-                    <label for="elektron-escrow-psbt-signed-<?php echo (int) $order['pk_i_id']; ?>"><?php _e('Once signed, paste the result from your wallet here', ELEKTRON_ESCROW_DOMAIN); ?></label>
-                    <textarea name="signed_psbt" id="elektron-escrow-psbt-signed-<?php echo (int) $order['pk_i_id']; ?>" rows="4" style="width: 100%; box-sizing: border-box;"></textarea>
-                    <input type="submit" class="btn btn-primary" value="<?php echo osc_esc_html(__('Submit my signature', ELEKTRON_ESCROW_DOMAIN)); ?>" />
-                </form>
-            <?php } else { ?>
-                <p class="text-muted"><?php _e('You already signed. Waiting for the seller to sign and broadcast the release from their own wallet.', ELEKTRON_ESCROW_DOMAIN); ?></p>
-            <?php } ?>
-        <?php } else { ?>
-            <?php if ((int) $order['psbt_signature_count'] < 1) { ?>
-                <p class="text-muted"><?php _e('Waiting for the buyer to sign the release first.', ELEKTRON_ESCROW_DOMAIN); ?></p>
-            <?php } else { ?>
-                <p><?php _e('Scan this into your own wallet (or copy the text below). It already carries the buyer\'s signature; your wallet only needs to add yours. Sign and broadcast it there -- this platform never does either for you.', ELEKTRON_ESCROW_DOMAIN); ?></p>
-
-                <?php
-                $psbtQrCode = new QrCode($order['psbt_base64']);
-                $psbtQrPngBase64 = base64_encode((new PngWriter())->write($psbtQrCode)->getString());
-                ?>
-                <img src="data:image/png;base64,<?php echo $psbtQrPngBase64; ?>" alt="<?php _e('Release transaction (buyer signed)', ELEKTRON_ESCROW_DOMAIN); ?>" />
-
-                <p><label for="elektron-escrow-psbt-partial-<?php echo (int) $order['pk_i_id']; ?>"><?php _e('Release transaction (buyer signed, tap to select, then copy)', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
-                <textarea id="elektron-escrow-psbt-partial-<?php echo (int) $order['pk_i_id']; ?>" class="elektron-escrow-code" readonly="readonly" rows="4" style="width: 100%; box-sizing: border-box;" onclick="this.select();"><?php echo osc_esc_html($order['psbt_base64']); ?></textarea>
-            <?php } ?>
-        <?php } ?>
-
-        <?php if (!$isBuyer) { ?>
-            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>" onsubmit="return confirm('<?php echo osc_esc_js(__('Mark this order as released? Only do this once the funds have actually been sent to your own wallet.', ELEKTRON_ESCROW_DOMAIN)); ?>');">
-                <?php echo osc_csrf_token_form(); ?>
-                <input type="hidden" name="mark_released" value="1" />
-                <input type="submit" class="btn btn-primary" value="<?php echo osc_esc_html(__('Mark as released', ELEKTRON_ESCROW_DOMAIN)); ?>" />
-            </form>
-        <?php } ?>
-
-    <?php } else { ?>
-        <p><?php echo osc_esc_html(elektron_escrow_t('order.' . $order['status'])); ?></p>
-    <?php } ?>
-
-    <?php
-    $hasRefund = !empty($order['buyer_refund_psbt_base64']);
-    $hasClaim = !empty($order['seller_claim_psbt_base64']);
-    if ($hasRefund || $hasClaim) {
-    ?>
-        <h2><?php _e('Timeout transactions (unilateral exit)', ELEKTRON_ESCROW_DOMAIN); ?></h2>
-        <p class="text-muted"><?php _e('These let either party exit alone after the timeout. Sign in your wallet and paste the result back here.', ELEKTRON_ESCROW_DOMAIN); ?></p>
-
-        <?php if ($hasRefund && $isBuyer) { ?>
-            <h3><?php _e('Your refund (valid after T1)', ELEKTRON_ESCROW_DOMAIN); ?></h3>
-            <?php
-            $qr = new QrCode($order['buyer_refund_psbt_base64']);
-            $png = base64_encode((new PngWriter())->write($qr)->getString());
-            ?>
-            <img src="data:image/png;base64,<?php echo $png; ?>" alt="Buyer refund PSBT" style="max-width:240px;" />
-            <p><textarea class="elektron-escrow-code" readonly rows="3" style="width:100%;" onclick="this.select();"><?php echo osc_esc_html($order['buyer_refund_psbt_base64']); ?></textarea></p>
-            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
-                <?php echo osc_csrf_token_form(); ?>
-                <input type="hidden" name="submit_signed_refund" value="1" />
-                <p><label><?php _e('Paste signed refund PSBT', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
-                <textarea name="signed_refund_psbt" rows="3" style="width:100%;"></textarea>
-                <p><input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Save signed refund', ELEKTRON_ESCROW_DOMAIN)); ?>" /></p>
-            </form>
-        <?php } ?>
-
-        <?php if ($hasClaim && !$isBuyer) { ?>
-            <h3><?php _e('Your claim (valid after T2)', ELEKTRON_ESCROW_DOMAIN); ?></h3>
-            <?php
-            $qr = new QrCode($order['seller_claim_psbt_base64']);
-            $png = base64_encode((new PngWriter())->write($qr)->getString());
-            ?>
-            <img src="data:image/png;base64,<?php echo $png; ?>" alt="Seller claim PSBT" style="max-width:240px;" />
-            <p><textarea class="elektron-escrow-code" readonly rows="3" style="width:100%;" onclick="this.select();"><?php echo osc_esc_html($order['seller_claim_psbt_base64']); ?></textarea></p>
-            <form method="post" action="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
-                <?php echo osc_csrf_token_form(); ?>
-                <input type="hidden" name="submit_signed_claim" value="1" />
-                <p><label><?php _e('Paste signed claim PSBT', ELEKTRON_ESCROW_DOMAIN); ?></label></p>
-                <textarea name="signed_claim_psbt" rows="3" style="width:100%;"></textarea>
-                <p><input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Save signed claim', ELEKTRON_ESCROW_DOMAIN)); ?>" /></p>
-            </form>
-        <?php } ?>
-    <?php } ?>
-
+    </details>
 </div>

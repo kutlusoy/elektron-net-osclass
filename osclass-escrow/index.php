@@ -2,7 +2,7 @@
 /*
 Plugin Name: Elektron Net Escrow
 Plugin URI: https://elektron-net.org
-Description: Trustless 2-of-2 multisig escrow payments in Elektron (ELEK) on the Elektron Net network, for Osclass listings. See osclass-escrow/README.MD for the full API specification.
+Description: Trustless 2-of-2 multisig escrow payments in Elektron (ELEK) on the Elektron Net network, for Osclass listings. The site only relays keys and PSBTs between the two parties. See osclass-escrow/README.MD for the full API specification.
 Version: 0.1.0
 Author: Elektron Net
 Author URI: https://elektron-net.org
@@ -21,18 +21,18 @@ Author URI: https://elektron-net.org
     // separator before the appended relative path.
     require_once __DIR__ . '/vendor/autoload.php';
     require_once __DIR__ . '/install.php';
-    require_once __DIR__ . '/models/EscrowOrderDAO.php';
-    require_once __DIR__ . '/models/EscrowWalletDAO.php';
+    require_once __DIR__ . '/models/EscrowDealDAO.php';
+    require_once __DIR__ . '/models/EscrowItemDAO.php';
     elektron_escrow_ensure_schema();
     require_once __DIR__ . '/includes/config.php';   // elektron_escrow_config()
-    require_once __DIR__ . '/includes/i18n.php';     // elektron_escrow_t()
+    require_once __DIR__ . '/includes/i18n.php';     // status labels and next-step texts
     require_once __DIR__ . '/includes/formatting.php'; // elektron_escrow_format_amount()
-    require_once __DIR__ . '/includes/wallet.php';   // wallet pubkey get/save helpers
     require_once __DIR__ . '/includes/notice.php';   // elektron_escrow_render_notice()
     require_once __DIR__ . '/includes/order-status.php'; // elektron_escrow_render_order_status()
-    require_once __DIR__ . '/includes/mail.php';     // order created/cancelled email notifications
-    require_once __DIR__ . '/includes/payment-watcher.php'; // elektron_escrow_check_payment()
-    require_once __DIR__ . '/includes/psbt.php';     // elektron_escrow_build_release_psbt()
+    require_once __DIR__ . '/includes/deal.php';     // workflow glue: perform, chain check, explorer links
+    require_once __DIR__ . '/includes/mail.php';     // deal update emails
+    require_once __DIR__ . '/includes/payment-watcher.php'; // elektron_escrow_check_all_deals()
+    require_once __DIR__ . '/includes/item-fields.php'; // optional seller key and payout address in the listing form
     require_once __DIR__ . '/includes/hooks.php';    // item widget, routes, cron
 
     // Activation / deactivation. See install.php.
@@ -98,15 +98,6 @@ Author URI: https://elektron-net.org
              // theme wrapper -- this does NOT by itself add a link to that menu; see includes/hooks.php's
              // 'user_menu_filter' hook for the actual link (osc_private_user_menu() ignores this flag
              // entirely; confirmed from Rewrite::addRoute()/CWebCustom.php/hUtils.php source)
-    );
-    osc_add_route(
-        'elektron_escrow_wallet',
-        'elektron-escrow/wallet(?![a-zA-Z])',
-        'elektron-escrow/wallet',
-        'osclass-escrow/controllers/wallet.php',
-        true // same as above: account-menu chrome only, not a menu link by itself. See includes/wallet.php
-             // for why this route replaced the old 'user_profile_form' hook, and includes/hooks.php for
-             // the 'user_menu_filter' hook that actually makes it reachable.
     );
     osc_add_route(
         'elektron_escrow_orders',

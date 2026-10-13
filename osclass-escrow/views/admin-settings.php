@@ -39,10 +39,6 @@
                 <td><input type="number" min="1" name="required_confirmations" id="required_confirmations" value="<?php echo (int) osc_get_preference('required_confirmations', 'plugin-osclass-escrow'); ?>" /></td>
             </tr>
             <tr>
-                <td><label for="fee_rate_lep_per_vbyte"><?php _e('Release transaction fee rate (lep/vByte)', ELEKTRON_ESCROW_DOMAIN); ?></label></td>
-                <td><input type="number" min="1" name="fee_rate_lep_per_vbyte" id="fee_rate_lep_per_vbyte" value="<?php echo (int) osc_get_preference('fee_rate_lep_per_vbyte', 'plugin-osclass-escrow'); ?>" /></td>
-            </tr>
-            <tr>
                 <td><label for="buyer_refund_days"><?php _e('Buyer refund threshold, T1 (days)', ELEKTRON_ESCROW_DOMAIN); ?></label></td>
                 <td><input type="number" min="1" name="buyer_refund_days" id="buyer_refund_days" value="<?php echo (int) osc_get_preference('buyer_refund_days', 'plugin-osclass-escrow'); ?>" /></td>
             </tr>
@@ -55,7 +51,7 @@
         <p class="description">
             <?php printf(
                 __('T2 must be at least %sx T1; see the plugin README, "Escrow timeout policy", for why.', ELEKTRON_ESCROW_DOMAIN),
-                \ElektronNet\Payments\Core\Escrow\TimeoutPolicy::MIN_RATIO
+                \ElektronNet\Escrow\TimeoutPolicy::MIN_RATIO
             ); ?>
         </p>
 

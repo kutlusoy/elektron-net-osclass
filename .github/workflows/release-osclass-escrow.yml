@@ -1,22 +1,11 @@
 name: Release osclass-escrow
 
 # Tag as osclass-v1.2.3 to cut a real release, or run manually for a
-# throwaway pre-release build (useful to sanity-check a zip before tagging).
-# Named/scoped to this one module deliberately: a future WooCommerce adapter
-# (or any other platform under this repo) gets its own equivalent
-# release-<module>.yml with its own tag prefix, not a shared workflow, so
-# the two can never build or release each other's plugin by mistake.
+# throwaway pre-release build.
 on:
   push:
     tags:
       - 'osclass-v*'
-    # Scoped so a pay-server-only change can never trigger this workflow
-    # (and vice versa for ci-pay-server.yml/release-pay-server.yml): the
-    # osclass-escrow adapter's composer.json path-repository pulls in all
-    # of core/, so both paths are listed here.
-    paths:
-      - 'osclass-escrow/**'
-      - 'core/**'
   workflow_dispatch:
     inputs:
       version:
@@ -36,7 +25,13 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
+          extensions: gmp
           tools: composer
+
+      - name: Run tests
+        run: |
+          php osclass-escrow/tests/ContractTest.php
+          php osclass-escrow/tests/DealWorkflowTest.php
 
       - name: Determine version
         id: version

@@ -1,21 +1,16 @@
 {
     "name": "elektron-net/osclass-escrow",
-    "description": "Osclass adapter for the Elektron Net Payments escrow suite.",
+    "description": "Trustless 2-of-2 escrow payments in ELEK for Osclass listings.",
     "type": "osclass-plugin",
     "license": "MIT",
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../core",
-            "options": {
-                "symlink": false
-            }
-        }
-    ],
     "require": {
         "php": ">=8.0",
-        "elektron-net/payments-core": "*",
-        "endroid/qr-code": "^4.0",
-        "lastguest/murmurhash": "2.1.1 as 2.0.0"
+        "ext-gmp": "*",
+        "endroid/qr-code": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "ElektronNet\\Escrow\\": "lib/"
+        }
     }
 }
