@@ -106,16 +106,44 @@ function elektron_escrow_set_default_preferences()
 }
 
 /**
- * Creates missing tables on installations that were activated before they existed.
+ * Creates missing tables and adds missing deal columns on installations
+ * that were activated by an earlier version of the plugin.
  */
 function elektron_escrow_ensure_schema()
 {
-    $dao = EscrowDealDAO::newInstance();
-    $result = $dao->dao->query("SHOW TABLES LIKE '" . DB_TABLE_PREFIX . "elektron_escrow_wallet'");
-    if ($result && $result->numRows() > 0) {
+    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '2') {
         return;
     }
+    $dao = EscrowDealDAO::newInstance();
     elektron_escrow_create_deal_tables();
+
+    $columns = [
+        'seller_pubkey' => 'VARCHAR(66) NULL',
+        'seller_exit_pubkey' => 'VARCHAR(66) NULL',
+        'buyer_pubkey' => 'VARCHAR(66) NULL',
+        'buyer_exit_pubkey' => 'VARCHAR(66) NULL',
+        'escrow_address' => 'VARCHAR(100) NULL',
+        'witness_script_hex' => 'TEXT NULL',
+        'buyer_refund_locktime' => 'INT(10) UNSIGNED NULL',
+        'seller_release_locktime' => 'INT(10) UNSIGNED NULL',
+        'funding_outputs' => 'TEXT NULL',
+        'seller_payout_address' => 'VARCHAR(100) NULL',
+        'release_psbt_signed' => 'MEDIUMTEXT NULL',
+        'closing_txid' => 'VARCHAR(64) NULL',
+        'dt_mod_date' => 'DATETIME NULL',
+    ];
+    $table = DB_TABLE_PREFIX . 'elektron_escrow_deal';
+    $result = $dao->dao->query('SHOW COLUMNS FROM ' . $table);
+    if (!$result) {
+        return;
+    }
+    $existing = array_column($result->result(), 'Field');
+    foreach ($columns as $name => $definition) {
+        if (!in_array($name, $existing, true)) {
+            $dao->dao->query('ALTER TABLE ' . $table . ' ADD COLUMN ' . $name . ' ' . $definition);
+        }
+    }
+    Preference::newInstance()->replace('schema_version', '2', 'plugin-osclass-escrow', 'STRING');
 }
 
 function elektron_escrow_uninstall()

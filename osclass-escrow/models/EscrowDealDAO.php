@@ -57,9 +57,22 @@ class EscrowDealDAO extends DAO
 
     public function insertDeal(array $fields): int
     {
-        $this->insert($fields);
+        if (!$this->insert($fields)) {
+            throw new \RuntimeException('The deal could not be stored.');
+        }
+        $id = (int) $this->dao->insertedId();
+        if ($id > 0) {
+            return $id;
+        }
 
-        return (int) $this->dao->insertedId();
+        // Some database layers report no insert id; the newest row of this buyer and item is the one just stored.
+        $this->dao->select('MAX(pk_i_id) AS id');
+        $this->dao->from($this->getTableName());
+        $this->dao->where('fk_i_item_id', (int) $fields['fk_i_item_id']);
+        $this->dao->where('fk_i_buyer_id', (int) $fields['fk_i_buyer_id']);
+        $result = $this->dao->get();
+
+        return $result === false ? 0 : (int) $result->row()['id'];
     }
 
     /**

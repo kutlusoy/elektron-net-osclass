@@ -199,6 +199,10 @@ elektron_escrow_table_style();
         <div class="elektron-escrow-panel">
         <?php switch ($status) {
             case DealStatus::AWAITING_PAYMENT:
+                if (empty($deal['escrow_address'])) {
+                    echo '<p class="elektron-escrow-error">' . osc_esc_html(__('The escrow address of this order was never created. Cancel it and start again from the listing.', ELEKTRON_ESCROW_DOMAIN)) . '</p>';
+                    break;
+                }
                 $paymentUri = elektron_escrow_payment_uri($deal['escrow_address'], $amountElek, $dealId);
                 echo $why(__('Why: the payment is a normal transaction from your wallet to the escrow address. From there it can only move with both signatures, or through the exits after the refund or claim date.', ELEKTRON_ESCROW_DOMAIN));
                 echo '<p><strong>' . osc_esc_html(sprintf(__('Send %s to the escrow address', ELEKTRON_ESCROW_DOMAIN), $amountText)) . '</strong></p>';
