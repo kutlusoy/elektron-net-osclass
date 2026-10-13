@@ -105,7 +105,7 @@ The resulting zip is what you upload through Osclass's own plugin installer, or 
 | `<plugin_path>_uninstall` | `index.php` | Deactivation callback, `elektron_escrow_uninstall()` (removes preferences, keeps the order table). |
 | `<plugin_path>_configure` | `index.php` | "Configure" action in the admin plugin list, renders `admin/settings.php`. |
 | `admin_menu_init` | `index.php` | Adds a dedicated "Elektron Net Escrow" entry under Admin > Plugins. |
-| `item_detail` | `includes/hooks.php` | Injects the "Buy with Elektron" / "View your order" widget on the item detail page. Receives the current item array. **Not** `show_item`: that hook fires from the item controller's own `doModel()` (data-preparation) method, before the theme emits any page markup at all, so output echoed from it lands ahead of the entire page instead of anywhere inside it; `item_detail` is the hook the theme's own template actually calls at the intended position (confirmed against the real, deployed `osclass-classifieds.com` theme, `oc-content/themes/sigma/item.php`), see "Status". |
+| `item_detail` | `includes/hooks.php` | Injects the availability widget on the item detail page: "Buy with Elektron", "View your order" for the buyer who holds the deal, "Reserved" or "Sold" for everyone else, and for the owner "Offer again" on a sold listing. Receives the current item array. **Not** `show_item`: that hook fires from the item controller's own `doModel()` (data-preparation) method, before the theme emits any page markup at all, so output echoed from it lands ahead of the entire page instead of anywhere inside it; `item_detail` is the hook the theme's own template actually calls at the intended position (confirmed against the real, deployed `osclass-classifieds.com` theme, `oc-content/themes/sigma/item.php`), see "Status". |
 | `user_menu_filter` | `includes/hooks.php` | Adds the "My Elektron orders" and "My Elektron wallet" pages to the logged-in user's account menu, the same mechanism Shopclass's own billing feature uses (`hBilling.php`). |
 | `cron_minutely` | `includes/hooks.php` | The chain watcher, `elektron_escrow_check_all_deals()`: looks up the funding transaction of every deal that is waiting for it (`awaiting_funding_broadcast`, `confirming`). The deal page runs the same check on load. |
 | `cron_daily` | `includes/hooks.php` | Daily sweep that raises `elektron_escrow_buyer_refund_reminder_due` / `elektron_escrow_seller_release_reminder_due` for funded deals whose T1/T2 reminder window (`lib/ReminderScheduler.php`) is open. Delivery is left to whoever listens to these hooks. |
@@ -117,6 +117,7 @@ Custom routes (via `osc_add_route()`, registered unconditionally at the top leve
 | `elektron_escrow_checkout` | `elektron-escrow/checkout?item=<id>` | `controllers/checkout.php` | GET shows a no-side-effect preview; only a POST with `confirm_checkout=1` and a valid CSRF token creates the deal (status `awaiting_payment`, the escrow is fixed at once from both connected wallets), rendered in the same response. Both parties must have connected a wallet. An existing open deal for the same item and buyer is shown instead of the preview. |
 | `elektron_escrow_order_status` | `elektron-escrow/order?order=<id>` | `controllers/order-status.php` | The deal page for either party: next step, escrow address and descriptor, PSBT text/QR/download blocks, history and messages. Every action is a POST with a `deal_action` marker and a CSRF token and goes through `elektron_escrow_deal_perform()`. |
 | `elektron_escrow_wallet` | `elektron-escrow/wallet` | `controllers/wallet.php` | Connects a wallet once per account: the user pastes the output of the node console command `gethdkeys '{"active_only":true}'` (without `private`). `WalletConnection` extracts the master public key; anything containing a private key is refused before further processing and never stored or shown. A script on the page also blocks the submit. |
+| `elektron_escrow_relist` | `elektron-escrow/relist` | `controllers/relist.php` | POST with CSRF token by the listing's owner: puts a sold listing back on offer (`b_item_relisted`). |
 | `elektron_escrow_orders` | `elektron-escrow/orders` | `controllers/orders.php` | "My Elektron orders": every deal the user is a party to, with a marker where it is their turn. |
 
 ## Database schema
@@ -137,6 +138,7 @@ Two tables, entirely owned by this plugin; Osclass's own tables are only ever re
 | `funding_outputs` | JSON list of the confirmed, unspent outputs at the escrow address. The release PSBT must spend exactly these. |
 | `seller_payout_address`, `release_psbt_signed` | The payout address (default from the seller's wallet connection, final value from the release submission) and the release PSBT carrying the seller's signature, after it passed the checks. |
 | `closing_txid` | Transaction id the party reported when closing the deal. |
+| `b_item_relisted` | Set by the owner's "Offer again": the finished sale no longer marks the listing as sold. |
 
 ### `elektron_escrow_wallet`
 
@@ -208,6 +210,8 @@ The site is a relay and a passive display: it never holds a key, builds a transa
 Before the steps that lead to a signature, each party must tick a confirmation that their wallet is prepared for the deal (`confirm_prepared`, stored as `buyer_prepared_at` / `seller_prepared_at`). Until then shipping, receipt, release and the payment QR code are locked. The preparation commands stay available afterwards. The refund and claim exits are never locked.
 
 Cancelling is possible for both parties until a payment is detected on the chain.
+
+A listing is treated as a single piece (`elektron_escrow_item_state()`): reserved while a deal is open (only the buyer of that deal can act, the oldest open deal holds the item), sold once a deal ends in `released` or `claimed`, and free again after `cancelled` or `refunded` or when the owner puts it back on offer. The listing itself stays active.
 
 A submitted release PSBT is parsed by `PsbtVerifier::assertReleasePsbt()`: it must spend exactly the stored escrow outputs, pay exactly one output to the stated address, carry a plausible fee, have no time lock, and hold only partial signatures of the seller's main key and optionally the seller's exit key with `SIGHASH_ALL`. Signature validity itself is checked by the wallet that finalizes. Everything a party submits is shown as reported; only confirmations come from the chain.
 

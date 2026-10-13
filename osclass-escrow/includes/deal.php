@@ -230,3 +230,22 @@ function elektron_escrow_deal_build_psbt(array $deal, int $userId, string $kind,
         throw new DealException($e->getMessage());
     }
 }
+
+/**
+ * Availability of a listing, which is treated as a single piece: reserved
+ * while a deal is open, sold once the money reached the seller, free again
+ * after a cancellation or refund or when the seller puts it back on offer.
+ *
+ * @return array{state:string,deal:?array} state is 'free', 'reserved' or 'sold'
+ */
+function elektron_escrow_item_state(int $itemId): array
+{
+    $dao = EscrowDealDAO::newInstance();
+    $open = $dao->findOpenByItem($itemId);
+    if ($open !== null) {
+        return ['state' => 'reserved', 'deal' => $open];
+    }
+    $sold = $dao->findSoldByItem($itemId);
+
+    return $sold !== null ? ['state' => 'sold', 'deal' => $sold] : ['state' => 'free', 'deal' => null];
+}

@@ -21,6 +21,9 @@ final class DealStatus
 
     public const TERMINAL = [self::RELEASED, self::REFUNDED, self::CLAIMED, self::CANCELLED];
 
+    /** Statuses in which the money went to the seller: the listing counts as sold. */
+    public const SOLD = [self::RELEASED, self::CLAIMED];
+
     /** Statuses in which the payment may already be on chain, so a timeout path can apply. */
     public const FUNDS_AT_RISK = [
         self::CONFIRMING,

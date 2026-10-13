@@ -1,6 +1,8 @@
 <?php if (!defined('ABS_PATH')) exit('ABS_PATH is not loaded. Direct access is not allowed.');
 /** @var array $item Osclass item row */
 /** @var array|null $order this buyer's existing EscrowDealDAO row for this item, if any */
+/** @var array{state:string,deal:?array} $state availability of the listing */
+/** @var bool $isOwner */
 
 // Escrow only ever applies to listings priced directly in one of the
 // admin-configured currency codes: converting a fiat-priced listing would
@@ -18,14 +20,33 @@ if (elektron_escrow_item_price_elek($item) === null) {
 }
 ?>
 
+<?php elektron_escrow_table_style(); ?>
 <div class="elektron-escrow-widget">
-    <?php if ($order === null) { ?>
-        <a class="btn btn-primary" href="<?php echo osc_route_url('elektron_escrow_checkout', ['item' => $item['pk_i_id']]); ?>">
-            <?php _e('Buy with Elektron (ELEK)', ELEKTRON_ESCROW_DOMAIN); ?>
-        </a>
-    <?php } else { ?>
+    <?php if ($isOwner) { ?>
+        <?php if ($state['state'] === 'reserved') { ?>
+            <p><span class="elektron-escrow-badge elektron-escrow-badge-reserved"><?php _e('Reserved', ELEKTRON_ESCROW_DOMAIN); ?></span>
+                <a href="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $state['deal']['pk_i_id']]); ?>"><?php _e('Open the Elektron order', ELEKTRON_ESCROW_DOMAIN); ?></a></p>
+        <?php } elseif ($state['state'] === 'sold') { ?>
+            <form method="post" action="<?php echo osc_route_url('elektron_escrow_relist'); ?>">
+                <?php echo osc_csrf_token_form(); ?>
+                <input type="hidden" name="item" value="<?php echo (int) $item['pk_i_id']; ?>" />
+                <p><span class="elektron-escrow-badge elektron-escrow-badge-sold"><?php _e('Sold', ELEKTRON_ESCROW_DOMAIN); ?></span>
+                    <?php _e('Do you have more of these?', ELEKTRON_ESCROW_DOMAIN); ?>
+                    <input type="submit" class="btn btn-default" value="<?php echo osc_esc_html(__('Offer again', ELEKTRON_ESCROW_DOMAIN)); ?>" /></p>
+            </form>
+        <?php } ?>
+    <?php } elseif ($order !== null) { ?>
         <a class="btn btn-default" href="<?php echo osc_route_url('elektron_escrow_order_status', ['order' => $order['pk_i_id']]); ?>">
             <?php _e('View your Elektron order', ELEKTRON_ESCROW_DOMAIN); ?>
+        </a>
+    <?php } elseif ($state['state'] === 'reserved') { ?>
+        <p><span class="elektron-escrow-badge elektron-escrow-badge-reserved"><?php _e('Reserved', ELEKTRON_ESCROW_DOMAIN); ?></span>
+            <?php _e('Another buyer has started an Elektron purchase of this item.', ELEKTRON_ESCROW_DOMAIN); ?></p>
+    <?php } elseif ($state['state'] === 'sold') { ?>
+        <p><span class="elektron-escrow-badge elektron-escrow-badge-sold"><?php _e('Sold', ELEKTRON_ESCROW_DOMAIN); ?></span></p>
+    <?php } else { ?>
+        <a class="btn btn-primary" href="<?php echo osc_route_url('elektron_escrow_checkout', ['item' => $item['pk_i_id']]); ?>">
+            <?php _e('Buy with Elektron (ELEK)', ELEKTRON_ESCROW_DOMAIN); ?>
         </a>
     <?php } ?>
 </div>
