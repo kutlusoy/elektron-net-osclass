@@ -19,7 +19,12 @@ $renderTable = function (array $deals, string $role): void {
         <?php foreach ($deals as $deal) { ?>
             <?php $orderItem = Item::newInstance()->findByPrimaryKey((int) $deal['fk_i_item_id']); ?>
             <tr>
-                <td><?php echo $orderItem !== false ? osc_esc_html($orderItem['s_title']) : osc_esc_html(__('(listing removed)', ELEKTRON_ESCROW_DOMAIN)); ?></td>
+                <td>
+                    <?php echo osc_esc_html(elektron_escrow_item_title($deal, $orderItem)); ?>
+                    <?php if (!elektron_escrow_item_exists($orderItem)) { ?>
+                        <small class="elektron-escrow-why">(<?php _e('listing removed', ELEKTRON_ESCROW_DOMAIN); ?>)</small>
+                    <?php } ?>
+                </td>
                 <td><?php echo osc_esc_html(elektron_escrow_format_amount(((int) $deal['amount_lep']) / 100000000)); ?> ELEK</td>
                 <td class="elektron-escrow-status" data-status="<?php echo osc_esc_html($deal['status']); ?>"><?php echo osc_esc_html(elektron_escrow_status_label($deal['status'])); ?></td>
                 <td><?php echo DealStatus::mayAct($deal, $role) ? osc_esc_html(__('Yes', ELEKTRON_ESCROW_DOMAIN)) : ''; ?></td>

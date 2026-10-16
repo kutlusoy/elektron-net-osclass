@@ -23,7 +23,7 @@ function elektron_escrow_send_turn_email(array $deal, bool $created = false): vo
         elektron_escrow_send_arbiter_email($deal);
     }
     $item = Item::newInstance()->findByPrimaryKey((int) $deal['fk_i_item_id']);
-    $itemTitle = $item !== false ? $item['s_title'] : '';
+    $itemTitle = elektron_escrow_item_title($deal, $item);
     $dealUrl = osc_route_url('elektron_escrow_order_status', ['order' => $deal['pk_i_id']]);
 
     foreach ($roles as $role) {

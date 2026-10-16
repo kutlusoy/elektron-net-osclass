@@ -225,10 +225,11 @@ elektron_escrow_table_style();
         <tr>
             <td><?php _e('Item', ELEKTRON_ESCROW_DOMAIN); ?></td>
             <td>
-                <?php if ($item !== false) { ?>
+                <?php if (elektron_escrow_item_exists($item)) { ?>
                     <a href="<?php echo osc_esc_html(osc_item_url_from_item($item)); ?>"><?php echo osc_esc_html($item['s_title']); ?></a>
                 <?php } else { ?>
-                    <?php _e('(listing removed)', ELEKTRON_ESCROW_DOMAIN); ?>
+                    <?php echo osc_esc_html(elektron_escrow_item_title($deal)); ?>
+                    <small class="elektron-escrow-why">(<?php _e('listing removed', ELEKTRON_ESCROW_DOMAIN); ?>)</small>
                 <?php } ?>
             </td>
         </tr>

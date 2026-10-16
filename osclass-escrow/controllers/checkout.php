@@ -134,6 +134,7 @@ if (Params::getParam('confirm_checkout') === '1') {
     try {
         $dealId = $dealDao->insertDeal([
             'fk_i_item_id' => $itemId,
+            'item_title' => mb_substr((string) $item['s_title'], 0, 190),
             'fk_i_buyer_id' => $buyerId,
             'fk_i_seller_id' => $sellerId,
             'amount_lep' => (int) round($amountElek * 100000000),

@@ -31,6 +31,33 @@ function elektron_escrow_format_amount(float $amountElek): string
 }
 
 /**
+ * Osclass returns a row without a title instead of false when a listing has been
+ * deleted, so the title is checked rather than the row itself.
+ *
+ * @param mixed $item result of Item::findByPrimaryKey()
+ */
+function elektron_escrow_item_exists($item): bool
+{
+    return is_array($item) && isset($item['pk_i_id'], $item['s_title']);
+}
+
+/**
+ * Title of the deal's listing. Falls back to the title stored with the deal when the
+ * listing is gone, so sold or bought items stay readable in the order lists.
+ *
+ * @param mixed $item result of Item::findByPrimaryKey()
+ */
+function elektron_escrow_item_title(array $deal, $item = null): string
+{
+    if (elektron_escrow_item_exists($item)) {
+        return (string) $item['s_title'];
+    }
+    $stored = trim((string) ($deal['item_title'] ?? ''));
+
+    return $stored !== '' ? $stored : sprintf(__('Listing #%d', ELEKTRON_ESCROW_DOMAIN), (int) $deal['fk_i_item_id']);
+}
+
+/**
  * Prints a small, self-contained <style> block for this plugin's own pages:
  * tables (class "elektron-escrow-table": borders, a header background, row
  * separators), paragraph spacing, and a wrapped, monospace block for long

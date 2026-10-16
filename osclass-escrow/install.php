@@ -24,6 +24,7 @@ function elektron_escrow_create_deal_tables()
         'CREATE TABLE IF NOT EXISTS ' . DB_TABLE_PREFIX . 'elektron_escrow_deal (
             pk_i_id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
             fk_i_item_id INT(10) UNSIGNED NOT NULL,
+            item_title VARCHAR(190) NULL,
             fk_i_buyer_id INT(10) UNSIGNED NOT NULL,
             fk_i_seller_id INT(10) UNSIGNED NOT NULL,
             amount_lep BIGINT(20) UNSIGNED NOT NULL,
@@ -128,13 +129,14 @@ function elektron_escrow_set_default_preferences()
  */
 function elektron_escrow_ensure_schema()
 {
-    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '6') {
+    if (osc_get_preference('schema_version', 'plugin-osclass-escrow') === '7') {
         return;
     }
     $dao = EscrowDealDAO::newInstance();
     elektron_escrow_create_deal_tables();
 
     $columns = [
+        'item_title' => 'VARCHAR(190) NULL',
         'seller_pubkey' => 'VARCHAR(66) NULL',
         'seller_exit_pubkey' => 'VARCHAR(66) NULL',
         'buyer_pubkey' => 'VARCHAR(66) NULL',
@@ -180,7 +182,26 @@ function elektron_escrow_ensure_schema()
     if (in_array('s_origin_path', $walletExisting, true)) {
         $dao->dao->query('ALTER TABLE ' . $walletTable . ' DROP COLUMN s_origin_path');
     }
-    Preference::newInstance()->replace('schema_version', '6', 'plugin-osclass-escrow', 'STRING');
+    elektron_escrow_backfill_item_titles($dao, $table);
+    Preference::newInstance()->replace('schema_version', '7', 'plugin-osclass-escrow', 'STRING');
+}
+
+/**
+ * Stores the title of every listing that still exists with its deals, so the deals stay
+ * readable after the listing is deleted. Deals whose listing is already gone keep an empty title.
+ */
+function elektron_escrow_backfill_item_titles($dao, string $table)
+{
+    $result = $dao->dao->query('SELECT pk_i_id, fk_i_item_id FROM ' . $table . ' WHERE item_title IS NULL');
+    if (!$result) {
+        return;
+    }
+    foreach ($result->result() as $row) {
+        $item = Item::newInstance()->findByPrimaryKey((int) $row['fk_i_item_id']);
+        if (is_array($item) && isset($item['s_title'])) {
+            $dao->dao->update($table, ['item_title' => mb_substr((string) $item['s_title'], 0, 190)], ['pk_i_id' => (int) $row['pk_i_id']]);
+        }
+    }
 }
 
 function elektron_escrow_uninstall()
