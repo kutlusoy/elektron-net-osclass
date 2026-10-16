@@ -47,7 +47,7 @@ $amountText = function (int $lep): string {
                     <?php $caseItem = Item::newInstance()->findByPrimaryKey((int) $case['fk_i_item_id']); ?>
                     <tr>
                         <td><?php echo (int) $case['pk_i_id']; ?></td>
-                        <td><?php echo $caseItem !== false ? osc_esc_html($caseItem['s_title']) : '-'; ?></td>
+                        <td><?php echo osc_esc_html(elektron_escrow_item_title($case, $caseItem)); ?></td>
                         <td><?php echo osc_esc_html($amountText((int) $case['amount_lep'])); ?></td>
                         <td><strong><?php
                             echo osc_esc_html($case['status'] === DealStatus::DISPUTED
@@ -74,7 +74,7 @@ $amountText = function (int $lep): string {
         <h3><?php printf(osc_esc_html(__('Case #%d', ELEKTRON_ESCROW_DOMAIN)), $dealId); ?>: <?php echo osc_esc_html(elektron_escrow_status_label($status)); ?></h3>
 
         <table class="elektron-escrow-table">
-            <tr><td><?php _e('Item', ELEKTRON_ESCROW_DOMAIN); ?></td><td><?php echo $item !== false ? '<a href="' . osc_esc_html(osc_item_url_from_item($item)) . '" target="_blank">' . osc_esc_html($item['s_title']) . '</a>' : '-'; ?></td></tr>
+            <tr><td><?php _e('Item', ELEKTRON_ESCROW_DOMAIN); ?></td><td><?php echo elektron_escrow_item_exists($item) ? '<a href="' . osc_esc_html(osc_item_url_from_item($item)) . '" target="_blank">' . osc_esc_html($item['s_title']) . '</a>' : osc_esc_html(elektron_escrow_item_title($deal, $item)); ?></td></tr>
             <tr><td><?php _e('Amount in the escrow', ELEKTRON_ESCROW_DOMAIN); ?></td><td><?php echo osc_esc_html($amountText($fundingLep ?: (int) $deal['amount_lep'])); ?></td></tr>
             <tr><td><?php echo osc_esc_html($roleName('buyer')); ?></td><td><?php echo osc_esc_html($names['buyer']); ?></td></tr>
             <tr><td><?php echo osc_esc_html($roleName('seller')); ?></td><td><?php echo osc_esc_html($names['seller']); ?></td></tr>
